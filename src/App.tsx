@@ -7,6 +7,7 @@ import { MinutesPanel } from './components/MinutesPanel'
 import { ProgressBar } from './components/ProgressBar'
 import { SettingsModal } from './components/SettingsModal'
 import { GenerateDialog } from './components/GenerateDialog'
+import { Onboarding } from './components/Onboarding'
 import { uploadAudio } from './services/api'
 import { connectTranscribeWS, ChatWebSocket } from './services/websocket'
 
@@ -15,6 +16,7 @@ export default function App() {
   const [chatWs, setChatWs] = useState<ChatWebSocket | null>(null)
   const [showGenerateDialog, setShowGenerateDialog] = useState(false)
   const [pendingMeetingId, setPendingMeetingId] = useState('')
+  const [showOnboarding, setShowOnboarding] = useState(false)
 
   const port = store.backendPort || (window as any).__BACKEND_PORT__ || 0
 
@@ -153,6 +155,20 @@ export default function App() {
 
   const currentMeeting = store.currentMeeting
 
+  // 启动时检测首次使用
+  useState(() => {
+    setTimeout(async () => {
+      try {
+        const resp = await fetch(`http://127.0.0.1:${(window as any).__BACKEND_PORT__}/api/settings/apikeys`)
+        const keys = await resp.json()
+        const configured = keys.claude?.configured || keys.openai?.configured || keys.gemini?.configured
+        if (!configured) {
+          setShowOnboarding(true)
+        }
+      } catch {}
+    }, 500)
+  })
+
   return (
     <div style={{width:'100%',height:'100%',display:'flex',flexDirection:'column',overflow:'hidden',background:'#0f0f12'}}>
       <div style={{display:'flex',flex:1,overflow:'hidden'}}>
@@ -178,6 +194,13 @@ export default function App() {
           meetingId={currentMeeting.id}
           onConfirm={handleGenerate}
           onCancel={() => setShowGenerateDialog(false)}
+        />
+      )}
+
+      {showOnboarding && (
+        <Onboarding
+          onOpenSettings={() => { setShowOnboarding(false); store.setShowSettings(true) }}
+          onDismiss={() => setShowOnboarding(false)}
         />
       )}
 
