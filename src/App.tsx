@@ -76,6 +76,8 @@ export default function App() {
     const meeting = store.meetings.find(m => m.id === pendingMeetingId) || store.currentMeeting
     if (!meeting?.transcript) return
 
+    // 清空旧纪要
+    store.updateMeeting(pendingMeetingId, { minutes: '' })
     store.setGenerating(true)
 
     const ws = new ChatWebSocket(port, (data) => {
@@ -159,8 +161,8 @@ export default function App() {
         <main style={{flex:1,display:'flex',overflow:'hidden',borderTopLeftRadius:'16px',background:'#1a1a22'}}>
           {currentMeeting ? (
             <>
-              <TranscriptPanel />
-              <MinutesPanel onChat={handleChat} />
+              <TranscriptPanel audioUrl={`${(window as any).__BACKEND_PORT__ ? `http://127.0.0.1:${(window as any).__BACKEND_PORT__}` : ''}/api/audio/${currentMeeting.id}/${encodeURIComponent(currentMeeting.filename)}`} />
+              <MinutesPanel onChat={handleChat} onRegenerate={() => { setPendingMeetingId(currentMeeting.id); setShowGenerateDialog(true) }} />
             </>
           ) : (
             <DropZone onFileDrop={handleFileDrop} />

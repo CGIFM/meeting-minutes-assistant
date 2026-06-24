@@ -4,9 +4,10 @@ import { useAppStore } from '../stores/appStore'
 
 interface MinutesPanelProps {
   onChat: (message: string) => void
+  onRegenerate?: () => void
 }
 
-export function MinutesPanel({ onChat }: MinutesPanelProps) {
+export function MinutesPanel({ onChat, onRegenerate }: MinutesPanelProps) {
   const { currentMeeting, isGenerating } = useAppStore()
   const [input, setInput] = useState('')
   const contentRef = useRef<HTMLDivElement>(null)
@@ -64,6 +65,11 @@ export function MinutesPanel({ onChat }: MinutesPanelProps) {
         </div>
         {currentMeeting.minutes && (
           <div style={{display:'flex',gap:'6px'}}>
+            {onRegenerate && (
+              <button onClick={onRegenerate} style={{fontSize:'10px',color:'rgba(255,255,255,0.4)',background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:'6px',padding:'4px 8px',cursor:'pointer'}}>
+                重新生成
+              </button>
+            )}
             <button onClick={handleCopyMinutes} style={{fontSize:'10px',color:'rgba(255,255,255,0.4)',background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:'6px',padding:'4px 8px',cursor:'pointer'}}>
               复制
             </button>

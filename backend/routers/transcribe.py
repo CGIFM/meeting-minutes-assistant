@@ -2,7 +2,8 @@ import uuid
 import asyncio
 import shutil
 from pathlib import Path
-from fastapi import APIRouter, UploadFile, File, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, UploadFile, File, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi.responses import FileResponse
 from services.asr_engine import get_engine
 from services.audio_processor import convert_to_wav, is_supported, get_audio_duration
 from db.database import get_db, get_setting
@@ -13,6 +14,18 @@ DATA_DIR = Path.home() / "Library" / "Application Support" / "meeting-minutes-as
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 _jobs: dict[str, dict] = {}
+
+
+@router.get("/audio/{job_id}/{filename}")
+async def get_audio_file(job_id: str, filename: str):
+    """提供原始音频文件用于播放"""
+    audio_dir = DATA_DIR / job_id
+    if not audio_dir.exists():
+        raise HTTPException(status_code=404, detail="文件不存在")
+    file_path = audio_dir / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="文件不存在")
+    return FileResponse(str(file_path))
 
 
 @router.post("/transcribe")
