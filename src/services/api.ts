@@ -1,5 +1,6 @@
 const BASE_URL = () => {
-  const port = (window as any).__BACKEND_PORT__ || 58886
+  const port = (window as any).__BACKEND_PORT__ || 0
+  if (!port) return ''
   return `http://127.0.0.1:${port}`
 }
 

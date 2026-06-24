@@ -22,19 +22,16 @@ swiftc \
 # 复制 Info.plist
 cp "$ROOT_DIR/native/Info.plist" "$CONTENTS_DIR/Info.plist"
 
-# 复制前端构建产物
-cp -r "$ROOT_DIR/dist/assets" "$RESOURCES_DIR/" 2>/dev/null || true
-cp "$ROOT_DIR/dist/index.html" "$RESOURCES_DIR/" 2>/dev/null || true
-
-# 复制后端
-cp -r "$ROOT_DIR/backend" "$RESOURCES_DIR/backend"
-rm -rf "$RESOURCES_DIR/backend/.venv"
+# 复制前端构建产物到 Resources（只有 UI，不含 backend）
+cp "$ROOT_DIR/dist/index.html" "$RESOURCES_DIR/index.html"
+cp -r "$ROOT_DIR/dist/assets" "$RESOURCES_DIR/assets"
 
 chmod +x "$MACOS_DIR/MeetingMinutes"
 codesign --force --deep --sign - "$APP_DIR" >/dev/null 2>&1 || true
 
-echo "✅ Built: $APP_DIR"
-echo "   运行: open \"$APP_DIR\""
-echo ""
-echo "   注意: 首次运行前需确保 Python 虚拟环境已创建:"
-echo "   cd backend && source .venv/bin/activate"
+# 安装到 ~/Applications
+rm -rf "$HOME/Applications/$APP_NAME.app"
+cp -R "$APP_DIR" "$HOME/Applications/$APP_NAME.app"
+
+echo "✅ Built & Installed: ~/Applications/$APP_NAME.app"
+echo "   双击打开或运行: open ~/Applications/$APP_NAME.app"

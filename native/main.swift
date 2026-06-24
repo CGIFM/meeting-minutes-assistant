@@ -51,15 +51,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startBackend() {
-        let projectDir = findProjectDir()
-
-        let venvPython = projectDir + "/backend/.venv/bin/python"
-        let mainPy = projectDir + "/backend/main.py"
+        let projectDir = findBackendDir()
+        let venvPython = projectDir + "/.venv/bin/python"
+        let mainPy = projectDir + "/main.py"
 
         guard FileManager.default.fileExists(atPath: venvPython) else {
             print("ERROR: Python venv not found at \(venvPython)")
-            print("Please run: cd backend && source .venv/bin/activate")
-            backendPort = 58886
+            backendPort = 0
             return
         }
 
@@ -67,7 +65,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         backendProcess = Process()
         backendProcess?.executableURL = URL(fileURLWithPath: venvPython)
         backendProcess?.arguments = [mainPy]
-        backendProcess?.currentDirectoryURL = URL(fileURLWithPath: projectDir + "/backend")
+        backendProcess?.currentDirectoryURL = URL(fileURLWithPath: projectDir)
         backendProcess?.environment = ProcessInfo.processInfo.environment.merging(
             ["PYTHONUNBUFFERED": "1"],
             uniquingKeysWith: { _, new in new }
@@ -78,28 +76,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             try backendProcess?.run()
         } catch {
             print("ERROR: Failed to start backend: \(error)")
-            backendPort = 58886
+            backendPort = 0
             return
         }
 
+        Thread.sleep(forTimeInterval: 2.0)
         let data = pipe.fileHandleForReading.availableData
         if let output = String(data: data, encoding: .utf8),
            let range = output.range(of: "PORT=") {
             let portStr = output[range.upperBound...].prefix(while: { $0.isNumber })
-            backendPort = Int(portStr) ?? 58886
-        } else {
-            Thread.sleep(forTimeInterval: 2.0)
-            let data2 = pipe.fileHandleForReading.availableData
-            if let output2 = String(data: data2, encoding: .utf8),
-               let range2 = output2.range(of: "PORT=") {
-                let portStr2 = output2[range2.upperBound...].prefix(while: { $0.isNumber })
-                backendPort = Int(portStr2) ?? 58886
-            } else {
-                backendPort = 58886
-            }
+            backendPort = Int(portStr) ?? 0
         }
 
-        print("Backend started on port \(backendPort)")
+        if backendPort > 0 {
+            print("Backend started on port \(backendPort)")
+        } else {
+            print("WARNING: Could not determine backend port")
+        }
     }
 
     private func stopBackend() {
@@ -107,51 +100,51 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         backendProcess = nil
     }
 
-    private func findProjectDir() -> String {
-        let execPath = Bundle.main.executablePath ?? ""
-        let execDir = (execPath as NSString).deletingLastPathComponent
+    private func findBackendDir() -> String {
+        let homePath = NSHomeDirectory()
 
-        // 开发模式：从项目目录直接运行
-        let devPath = (execDir as NSString).deletingLastPathComponent
-        if FileManager.default.fileExists(atPath: devPath + "/backend/main.py") {
-            return devPath
+        // 固定项目路径（始终优先，因为 .venv 在这里）
+        let projectBackend = homePath + "/Projects/meeting-minutes-assistant/backend"
+        if FileManager.default.fileExists(atPath: projectBackend + "/.venv/bin/python") {
+            return projectBackend
         }
 
-        // app bundle 模式
-        let resourcesPath = Bundle.main.resourcePath ?? ""
-        if FileManager.default.fileExists(atPath: resourcesPath + "/backend/main.py") {
-            return resourcesPath
-        }
-
-        // fallback: 当前工作目录
-        let cwd = FileManager.default.currentDirectoryPath
-        if FileManager.default.fileExists(atPath: cwd + "/backend/main.py") {
-            return cwd
-        }
-
-        return cwd
+        // fallback
+        return projectBackend
     }
 
     private func loadUI() {
-        let projectDir = findProjectDir()
-        let htmlPath = projectDir + "/dist/index.html"
-
-        if FileManager.default.fileExists(atPath: htmlPath) {
-            let url = URL(fileURLWithPath: htmlPath)
-            webView.loadFileURL(url, allowingReadAccessTo: URL(fileURLWithPath: projectDir + "/dist"))
-        } else {
-            let fallbackHTML = """
-            <html>
-            <body style="background:#0f0f12;color:#fff;font-family:-apple-system;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
-            <div style="text-align:center;">
-                <h2>会议纪要助手</h2>
-                <p style="color:#666;">前端未构建，请先运行: npm run build</p>
-            </div>
-            </body>
-            </html>
-            """
-            webView.loadHTMLString(fallbackHTML, baseURL: nil)
+        // 优先从 bundle Resources 加载（app 打包后）
+        if let resourcesPath = Bundle.main.resourcePath {
+            let htmlPath = resourcesPath + "/index.html"
+            if FileManager.default.fileExists(atPath: htmlPath) {
+                let url = URL(fileURLWithPath: htmlPath)
+                webView.loadFileURL(url, allowingReadAccessTo: URL(fileURLWithPath: resourcesPath))
+                return
+            }
         }
+
+        // 开发模式：从项目 dist 目录加载
+        let homePath = NSHomeDirectory()
+        let distPath = homePath + "/Projects/meeting-minutes-assistant/dist/index.html"
+        if FileManager.default.fileExists(atPath: distPath) {
+            let url = URL(fileURLWithPath: distPath)
+            let distDir = (distPath as NSString).deletingLastPathComponent
+            webView.loadFileURL(url, allowingReadAccessTo: URL(fileURLWithPath: distDir))
+            return
+        }
+
+        let fallbackHTML = """
+        <html>
+        <body style="background:#0f0f12;color:#fff;font-family:-apple-system;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
+        <div style="text-align:center;">
+            <h2>会议纪要助手</h2>
+            <p style="color:#666;">前端未构建，请先运行: npm run build</p>
+        </div>
+        </body>
+        </html>
+        """
+        webView.loadHTMLString(fallbackHTML, baseURL: nil)
     }
 }
 
