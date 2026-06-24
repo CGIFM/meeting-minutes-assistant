@@ -14,6 +14,23 @@ from db.database import init_db
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    # 启动时强制使用 CC switch 本地路由（CC switch 切换 provider 时本应用自动跟随）
+    try:
+        import httpx
+        from db.database import set_setting
+        async with httpx.AsyncClient(timeout=3) as client:
+            resp = await client.post("http://127.0.0.1:15721/v1/messages", json={
+                "model": "claude-sonnet-4-20250514", "max_tokens": 1,
+                "messages": [{"role": "user", "content": "hi"}],
+            }, headers={"x-api-key": "test", "anthropic-version": "2023-06-01"})
+            if resp.status_code in (200, 201):
+                await set_setting("baseurl_claude", "http://127.0.0.1:15721")
+                await set_setting("apikey_claude", "cc-switch-local")
+                print("✓ 已连接 CC switch ���地路由 (15721) - CC switch 切换 provider 时自动跟随", flush=True)
+            else:
+                print(f"CC switch 本地路由响应 {resp.status_code}，未启用", flush=True)
+    except Exception as e:
+        print(f"CC switch 本地路由不可用: {e}", flush=True)
     yield
 
 

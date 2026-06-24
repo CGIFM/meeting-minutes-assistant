@@ -60,15 +60,48 @@ export function TranscriptPanel({ audioUrl }: TranscriptPanelProps) {
     return `${m}:${s.toString().padStart(2, '0')}`
   }
 
-  const speakerColors: Record<string, string> = {}
-  const colors = ['#60a5fa', '#34d399', '#a78bfa', '#fbbf24', '#fb7185']
+  const speakerStyles: Record<string, {bg: string; text: string}> = {}
+  const palette = [
+    {bg: '#3b82f6', text: '#fff'},   // 蓝
+    {bg: '#10b981', text: '#fff'},   // 绿
+    {bg: '#a855f7', text: '#fff'},   // 紫
+    {bg: '#f59e0b', text: '#fff'},   // 橙
+    {bg: '#ef4444', text: '#fff'},   // 红
+    {bg: '#06b6d4', text: '#fff'},   // 青
+  ]
   let colorIdx = 0
-  const getSpeakerColor = (speaker: string) => {
-    if (!speakerColors[speaker]) {
-      speakerColors[speaker] = colors[colorIdx % colors.length]
+  const getSpeakerStyle = (speaker: string) => {
+    if (!speakerStyles[speaker]) {
+      speakerStyles[speaker] = palette[colorIdx % palette.length]
       colorIdx++
     }
-    return speakerColors[speaker]
+    return speakerStyles[speaker]
+  }
+
+  // 说话人 chip 组件（实心彩色，可改名）
+  const SpeakerChip = ({ speaker, size = 'small' }: { speaker: string; size?: 'small' | 'big' }) => {
+    const style = getSpeakerStyle(speaker)
+    const big = size === 'big'
+    return (
+      <span
+        onClick={() => { setEditingSpeaker(speaker); setNewName(speaker) }}
+        style={{
+          display:'inline-flex',alignItems:'center',gap:'4px',
+          background: style.bg, color: style.text,
+          fontSize: big ? '11px' : '10px',
+          fontWeight: 600,
+          padding: big ? '4px 10px' : '2px 8px',
+          borderRadius: '99px',
+          cursor: 'pointer',
+          border: 'none',
+          whiteSpace: 'nowrap',
+        }}
+        title="点击重命名"
+      >
+        {speaker}
+        <span style={{opacity:0.6,fontSize:'0.85em'}}>✎</span>
+      </span>
+    )
   }
 
   const uniqueSpeakers = [...new Set(currentMeeting.segments.map(s => s.speaker))]
@@ -160,11 +193,12 @@ export function TranscriptPanel({ audioUrl }: TranscriptPanelProps) {
         <button onClick={handleCopyTranscript} style={{fontSize:'10px',color:'rgba(255,255,255,0.4)',background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:'6px',padding:'4px 8px',cursor:'pointer',flexShrink:0}}>复制</button>
       </div>
 
-      {/* Speaker Tags */}
+      {/* Speaker Tags - 顶部说话人列表 */}
       {uniqueSpeakers.length > 0 && (
-        <div style={{padding:'8px 16px',borderBottom:'1px solid rgba(255,255,255,0.04)',display:'flex',gap:'6px',flexWrap:'wrap',alignItems:'center'}}>
+        <div style={{padding:'10px 16px',borderBottom:'1px solid rgba(255,255,255,0.04)',display:'flex',gap:'8px',flexWrap:'wrap',alignItems:'center',background:'rgba(0,0,0,0.15)'}}>
+          <span style={{fontSize:'10px',color:'rgba(255,255,255,0.4)',marginRight:'4px'}}>说话人 ({uniqueSpeakers.length})：</span>
           {uniqueSpeakers.map(speaker => (
-            <div key={speaker} style={{display:'flex',alignItems:'center',gap:'4px'}}>
+            <div key={speaker}>
               {editingSpeaker === speaker ? (
                 <input
                   autoFocus
@@ -172,20 +206,13 @@ export function TranscriptPanel({ audioUrl }: TranscriptPanelProps) {
                   onChange={(e) => setNewName(e.target.value)}
                   onBlur={() => handleRenameSpeaker(speaker)}
                   onKeyDown={(e) => e.key === 'Enter' && handleRenameSpeaker(speaker)}
-                  style={{fontSize:'10px',background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.2)',borderRadius:'4px',padding:'2px 6px',color:'white',width:'80px',outline:'none'}}
+                  style={{fontSize:'11px',background:'rgba(255,255,255,0.1)',border:'1px solid rgba(96,165,250,0.5)',borderRadius:'6px',padding:'4px 8px',color:'white',width:'100px',outline:'none'}}
                 />
               ) : (
-                <span
-                  onClick={() => { setEditingSpeaker(speaker); setNewName(speaker) }}
-                  style={{fontSize:'10px',color:getSpeakerColor(speaker),background:'rgba(255,255,255,0.04)',borderRadius:'4px',padding:'2px 8px',cursor:'pointer',border:'1px solid rgba(255,255,255,0.06)'}}
-                  title="点击重命名"
-                >
-                  {speaker}
-                </span>
+                <SpeakerChip speaker={speaker} size="big" />
               )}
             </div>
           ))}
-          <span style={{fontSize:'9px',color:'rgba(255,255,255,0.2)'}}>点击改名</span>
         </div>
       )}
 
@@ -220,10 +247,10 @@ export function TranscriptPanel({ audioUrl }: TranscriptPanelProps) {
                 </div>
                 {/* 文字内容（点击也跳转） */}
                 <div style={{flex:1,minWidth:0,cursor:audioUrl?'pointer':'default'}} onClick={() => handleJumpToTime(seg.start)}>
-                  <span style={{fontWeight:500,fontSize:'10px',color:getSpeakerColor(seg.speaker),textTransform:'uppercase',letterSpacing:'0.03em'}}>
-                    {seg.speaker}
-                  </span>
-                  <p style={{color:isActive?'rgba(255,255,255,0.95)':'rgba(255,255,255,0.7)',fontSize:'13px',margin:'3px 0 0',lineHeight:1.6}}>{seg.text}</p>
+                  <div style={{marginBottom:'4px'}}>
+                    <SpeakerChip speaker={seg.speaker} />
+                  </div>
+                  <p style={{color:isActive?'rgba(255,255,255,0.95)':'rgba(255,255,255,0.7)',fontSize:'13px',margin:0,lineHeight:1.6}}>{seg.text}</p>
                 </div>
               </div>
             )

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import ReactMarkdown from 'react-markdown'
+import { ObsidianMarkdown } from './ObsidianMarkdown'
 import { useAppStore } from '../stores/appStore'
 import { BACKEND_PORT } from '../services/api'
 
@@ -164,7 +164,7 @@ export function MinutesPanel({ onChat, onRegenerate }: MinutesPanelProps) {
       <div ref={contentRef} style={{flex:1,overflowY:'auto',padding:'20px'}}>
         {currentMeeting.minutes ? (
           <div ref={minutesRef} className="prose prose-sm prose-invert max-w-none" style={{color:'rgba(255,255,255,0.7)',fontSize:'13px',lineHeight:1.8,padding:'8px'}}>
-            <ReactMarkdown>{currentMeeting.minutes}</ReactMarkdown>
+            <ObsidianMarkdown content={currentMeeting.minutes} />
           </div>
         ) : (
           <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%'}}>
@@ -199,7 +199,7 @@ export function MinutesPanel({ onChat, onRegenerate }: MinutesPanelProps) {
                 }}>
                   {msg.role === 'assistant' ? (
                     <div className="prose prose-sm prose-invert max-w-none">
-                      <ReactMarkdown>{msg.content}</ReactMarkdown>
+                      <ObsidianMarkdown content={msg.content} />
                     </div>
                   ) : msg.content}
                 </div>

@@ -137,6 +137,40 @@ async def import_claude_code_key():
     return {"success": False, "message": "未检测到 CC switch 的 Claude 配置"}
 
 
+@router.post("/settings/use-local-ccswitch")
+async def use_local_ccswitch():
+    """使用 CC switch 本地路由 (127.0.0.1:15721)"""
+    test_url = "http://127.0.0.1:15721/v1/messages"
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.post(test_url, json={
+                "model": "claude-sonnet-4-20250514",
+                "max_tokens": 1,
+                "messages": [{"role": "user", "content": "hi"}],
+            }, headers={"x-api-key": "cc-switch-local", "anthropic-version": "2023-06-01", "content-type": "application/json"})
+            if resp.status_code in (200, 201):
+                await set_setting("baseurl_claude", "http://127.0.0.1:15721")
+                await set_setting("apikey_claude", "cc-switch-local")
+                return {"success": True, "message": "已切换到 CC switch 本地路由 (15721)"}
+            return {"success": False, "message": f"本地路由响应 {resp.status_code}"}
+    except Exception as e:
+        return {"success": False, "message": f"无法连接 15721: {e}"}
+
+
+@router.get("/settings/check-local-ccswitch")
+async def check_local_ccswitch():
+    """检测 CC switch 本地路由是否可用"""
+    try:
+        async with httpx.AsyncClient(timeout=3) as client:
+            resp = await client.post("http://127.0.0.1:15721/v1/messages", json={
+                "model": "claude-sonnet-4-20250514", "max_tokens": 1,
+                "messages": [{"role": "user", "content": "hi"}],
+            }, headers={"x-api-key": "test", "anthropic-version": "2023-06-01"})
+            return {"available": resp.status_code in (200, 201)}
+    except Exception:
+        return {"available": False}
+
+
 @router.post("/settings/test-connection")
 async def test_connection(data: TestConnectionRequest):
     """测试 LLM 连接是否正常"""
