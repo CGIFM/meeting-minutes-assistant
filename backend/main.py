@@ -1,9 +1,11 @@
 import socket
 import asyncio
 import uvicorn
+from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from routers import transcribe, llm, settings
 from db.database import init_db
@@ -28,6 +30,11 @@ app.add_middleware(
 app.include_router(transcribe.router, prefix="/api")
 app.include_router(llm.router, prefix="/api")
 app.include_router(settings.router, prefix="/api")
+
+# 静态文件：前端构建产物
+dist_dir = Path(__file__).parent.parent / "dist"
+if dist_dir.exists():
+    app.mount("/", StaticFiles(directory=str(dist_dir), html=True), name="static")
 
 
 def find_free_port():

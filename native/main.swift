@@ -102,49 +102,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func findBackendDir() -> String {
         let homePath = NSHomeDirectory()
-
-        // 固定项目路径（始终优先，因为 .venv 在这里）
         let projectBackend = homePath + "/Projects/meeting-minutes-assistant/backend"
-        if FileManager.default.fileExists(atPath: projectBackend + "/.venv/bin/python") {
-            return projectBackend
-        }
-
-        // fallback
         return projectBackend
     }
 
     private func loadUI() {
-        // 优先从 bundle Resources 加载（app 打包后）
-        if let resourcesPath = Bundle.main.resourcePath {
-            let htmlPath = resourcesPath + "/index.html"
-            if FileManager.default.fileExists(atPath: htmlPath) {
-                let url = URL(fileURLWithPath: htmlPath)
-                webView.loadFileURL(url, allowingReadAccessTo: URL(fileURLWithPath: resourcesPath))
-                return
-            }
+        if backendPort > 0 {
+            let url = URL(string: "http://127.0.0.1:\(backendPort)/")!
+            webView.load(URLRequest(url: url))
+        } else {
+            let fallbackHTML = """
+            <html>
+            <body style="background:#0f0f12;color:#fff;font-family:-apple-system;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
+            <div style="text-align:center;">
+                <h2 style="font-weight:500;">会议纪要助手</h2>
+                <p style="color:#666;font-size:14px;">后端启动失败，请检查 Python 环境</p>
+                <p style="color:#444;font-size:12px;margin-top:12px;">cd ~/Projects/meeting-minutes-assistant/backend<br>source .venv/bin/activate && python main.py</p>
+            </div>
+            </body>
+            </html>
+            """
+            webView.loadHTMLString(fallbackHTML, baseURL: nil)
         }
-
-        // 开发模式：从项目 dist 目录加载
-        let homePath = NSHomeDirectory()
-        let distPath = homePath + "/Projects/meeting-minutes-assistant/dist/index.html"
-        if FileManager.default.fileExists(atPath: distPath) {
-            let url = URL(fileURLWithPath: distPath)
-            let distDir = (distPath as NSString).deletingLastPathComponent
-            webView.loadFileURL(url, allowingReadAccessTo: URL(fileURLWithPath: distDir))
-            return
-        }
-
-        let fallbackHTML = """
-        <html>
-        <body style="background:#0f0f12;color:#fff;font-family:-apple-system;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
-        <div style="text-align:center;">
-            <h2>会议纪要助手</h2>
-            <p style="color:#666;">前端未构建，请先运行: npm run build</p>
-        </div>
-        </body>
-        </html>
-        """
-        webView.loadHTMLString(fallbackHTML, baseURL: nil)
     }
 }
 
