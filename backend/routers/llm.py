@@ -8,6 +8,28 @@ from db.database import get_db, get_setting
 router = APIRouter()
 
 
+def normalize_messages(messages: list[dict]) -> list[dict]:
+    """合并连续相同 role 的消息，确保 role 交替（Claude/GLM API 要求）"""
+    if not messages:
+        return messages
+    result = [messages[0].copy()]
+    for msg in messages[1:]:
+        if msg.get("role") == result[-1].get("role"):
+            # 合并到上一条
+            prev = result[-1].get("content", "")
+            cur = msg.get("content", "")
+            sep = "\n\n" if prev and cur else ""
+            result[-1]["content"] = f"{prev}{sep}{cur}"
+        else:
+            result.append(msg.copy())
+    # 确保第一条不是 assistant（API 要求 user 开头或 system 后接 user）
+    while result and result[0].get("role") == "assistant":
+        result.pop(0)
+    # 去除空内容消息
+    result = [m for m in result if m.get("content", "").strip()]
+    return result
+
+
 class SummarizeRequest(BaseModel):
     meeting_id: str
     transcript: str
@@ -96,11 +118,11 @@ async def _handle_chat(websocket: WebSocket, data: dict):
         await websocket.send_json({"type": "error", "message": f"请先配置 {provider_name} 的 API Key"})
         return
 
-    messages = [
+    messages = normalize_messages([
         {"role": "system", "content": "你是一位专业的会议纪要撰写助手。用户可能会要求你修改、补充或调整之前生成的会议纪要。请根据用户的要求进行调整。"},
     ] + history + [
         {"role": "user", "content": message},
-    ]
+    ])
 
     try:
         provider = create_provider(provider_name, api_key, base_url)
@@ -110,7 +132,10 @@ async def _handle_chat(websocket: WebSocket, data: dict):
 
         async for chunk in provider.stream_chat(messages, model or None):
             full_response += chunk
-            await websocket.send_json({"type": "chunk", "content": chunk})
+            try:
+                await websocket.send_json({"type": "chunk", "content": chunk})
+            except Exception:
+                break
 
         await websocket.send_json({"type": "done", "full_content": full_response})
 

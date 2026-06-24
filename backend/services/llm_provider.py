@@ -170,7 +170,7 @@ class OllamaProvider(LLMProvider):
 
 def create_provider(provider_name: str, api_key: str = "", base_url: str = "") -> LLMProvider:
     if provider_name == "claude":
-        return ClaudeProvider(api_key)
+        return ClaudeProvider(api_key, base_url)
     elif provider_name == "openai":
         return OpenAIProvider(api_key, base_url or "https://api.openai.com/v1")
     elif provider_name == "gemini":
