@@ -1,0 +1,8 @@
+node_modules/
+dist/
+dist-electron/
+backend/.venv/
+backend/__pycache__/
+backend/**/__pycache__/
+*.pyc
+.DS_Store

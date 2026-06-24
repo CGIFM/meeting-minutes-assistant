@@ -1,0 +1,13 @@
+torch>=2.8.0
+torchaudio>=2.8.0
+funasr>=1.2.0
+modelscope
+fastapi>=0.115.0
+uvicorn[standard]>=0.34.0
+websockets>=15.0
+httpx>=0.28.0
+python-multipart
+pydantic>=2.0
+aiosqlite
+soundfile
+numpy
