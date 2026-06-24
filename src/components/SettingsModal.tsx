@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAppStore } from '../stores/appStore'
-import { getSettings, updateSettings, updateApiKey, getApiKeys } from '../services/api'
+import { getSettings, updateSettings, updateApiKey, getApiKeys, BACKEND_PORT } from '../services/api'
 
 const PROVIDERS = [
   { id: 'claude', name: 'Claude (Anthropic)', placeholder: 'sk-ant-...', hasBaseUrl: false },
@@ -9,7 +9,7 @@ const PROVIDERS = [
   { id: 'ollama', name: 'Ollama (本地)', placeholder: '无需 Key', hasBaseUrl: true },
 ]
 
-const BASE_URL = () => `http://127.0.0.1:${(window as any).__BACKEND_PORT__ || 0}`
+const BASE_URL = () => `http://127.0.0.1:${BACKEND_PORT()}`
 
 export function SettingsModal() {
   const { setShowSettings, settings, setSettings } = useAppStore()

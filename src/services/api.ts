@@ -1,7 +1,14 @@
+// 后端和前端同源（FastAPI 既提供 API 又提供页面），用当前页面端口
+const BACKEND_PORT = () => {
+  if (typeof window !== 'undefined' && window.location.port) {
+    return window.location.port
+  }
+  return (window as any).__BACKEND_PORT__ || 0
+}
+
 const BASE_URL = () => {
-  const port = (window as any).__BACKEND_PORT__ || 0
-  if (!port) return ''
-  return `http://127.0.0.1:${port}`
+  const port = BACKEND_PORT()
+  return port ? `http://127.0.0.1:${port}` : ''
 }
 
 export async function uploadAudio(file: File): Promise<{ job_id: string; filename: string }> {
@@ -51,3 +58,5 @@ export async function getMeeting(id: string) {
   const res = await fetch(`${BASE_URL()}/api/meetings/${id}`)
   return res.json()
 }
+
+export { BACKEND_PORT }

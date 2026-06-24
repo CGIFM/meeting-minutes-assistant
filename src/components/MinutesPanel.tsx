@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { useAppStore } from '../stores/appStore'
+import { BACKEND_PORT } from '../services/api'
 
 interface MinutesPanelProps {
   onChat: (message: string) => void
@@ -51,7 +52,7 @@ export function MinutesPanel({ onChat, onRegenerate }: MinutesPanelProps) {
     URL.revokeObjectURL(url)
   }
 
-  const BASE_URL = `http://127.0.0.1:${(window as any).__BACKEND_PORT__ || 0}`
+  const BASE_URL = `http://127.0.0.1:${BACKEND_PORT()}`
 
   const callExport = async (format: string) => {
     if (!currentMeeting.minutes) return
@@ -124,7 +125,7 @@ export function MinutesPanel({ onChat, onRegenerate }: MinutesPanelProps) {
             </span>
           )}
         </div>
-        {currentMeeting.minutes && (
+        {currentMeeting.minutes ? (
           <div style={{display:'flex',gap:'4px',flexWrap:'wrap',justifyContent:'flex-end'}}>
             {onRegenerate && (
               <button onClick={onRegenerate} style={{fontSize:'10px',color:'rgba(255,255,255,0.4)',background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:'6px',padding:'4px 8px',cursor:'pointer'}}>
@@ -150,6 +151,12 @@ export function MinutesPanel({ onChat, onRegenerate }: MinutesPanelProps) {
               复制
             </button>
           </div>
+        ) : (
+          onRegenerate && (
+            <button onClick={onRegenerate} style={{fontSize:'11px',color:'white',background:'linear-gradient(135deg, #3b82f6, #8b5cf6)',border:'none',borderRadius:'8px',padding:'6px 14px',cursor:'pointer',fontWeight:500}}>
+              生成纪要
+            </button>
+          )
         )}
       </div>
 

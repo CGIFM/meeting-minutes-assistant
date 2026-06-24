@@ -1,17 +1,18 @@
+import { BACKEND_PORT } from './api'
+
 type MessageHandler = (data: any) => void
 
 export class ChatWebSocket {
   private ws: WebSocket | null = null
   private onMessage: MessageHandler
-  private port: number
 
-  constructor(port: number, onMessage: MessageHandler) {
-    this.port = port
+  constructor(onMessage: MessageHandler) {
     this.onMessage = onMessage
   }
 
   connect() {
-    this.ws = new WebSocket(`ws://127.0.0.1:${this.port}/api/ws/chat`)
+    const port = BACKEND_PORT()
+    this.ws = new WebSocket(`ws://127.0.0.1:${port}/api/ws/chat`)
     this.ws.onmessage = (event) => {
       const data = JSON.parse(event.data)
       this.onMessage(data)
@@ -35,13 +36,13 @@ export class ChatWebSocket {
 }
 
 export function connectTranscribeWS(
-  port: number,
   jobId: string,
   onProgress: (p: number) => void,
   onSegment: (segment: any) => void,
   onComplete: (result: any) => void,
   onError: (msg: string) => void,
 ) {
+  const port = BACKEND_PORT()
   const ws = new WebSocket(`ws://127.0.0.1:${port}/api/ws/transcribe/${jobId}`)
   ws.onmessage = (event) => {
     const data = JSON.parse(event.data)

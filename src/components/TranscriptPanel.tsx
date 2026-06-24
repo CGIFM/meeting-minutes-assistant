@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useAppStore, TranscriptSegment } from '../stores/appStore'
+import { useAppStore } from '../stores/appStore'
 
 interface TranscriptPanelProps {
   audioUrl?: string
@@ -11,16 +11,27 @@ export function TranscriptPanel({ audioUrl }: TranscriptPanelProps) {
   const [newName, setNewName] = useState('')
   const [currentTime, setCurrentTime] = useState(0)
   const [activeSegment, setActiveSegment] = useState<number>(-1)
+  const [isPlaying, setIsPlaying] = useState(false)
   const audioRef = useRef<HTMLAudioElement>(null)
+  const segmentRefs = useRef<(HTMLDivElement | null)[]>([])
 
   useEffect(() => {
     const audio = audioRef.current
     if (!audio) return
     const updateTime = () => setCurrentTime(audio.currentTime)
+    const onPlay = () => setIsPlaying(true)
+    const onPause = () => setIsPlaying(false)
     audio.addEventListener('timeupdate', updateTime)
-    return () => audio.removeEventListener('timeupdate', updateTime)
+    audio.addEventListener('play', onPlay)
+    audio.addEventListener('pause', onPause)
+    return () => {
+      audio.removeEventListener('timeupdate', updateTime)
+      audio.removeEventListener('play', onPlay)
+      audio.removeEventListener('pause', onPause)
+    }
   }, [audioUrl])
 
+  // 当前播放片段 + 自动滚动
   useEffect(() => {
     if (!currentMeeting?.segments.length || !audioUrl) {
       setActiveSegment(-1)
@@ -29,8 +40,15 @@ export function TranscriptPanel({ audioUrl }: TranscriptPanelProps) {
     const idx = currentMeeting.segments.findIndex(
       (s, i) => s.start <= currentTime && (i === currentMeeting.segments.length - 1 || currentMeeting.segments[i + 1].start > currentTime)
     )
-    setActiveSegment(idx)
-  }, [currentTime, currentMeeting, audioUrl])
+    if (idx !== activeSegment && idx >= 0) {
+      setActiveSegment(idx)
+      // 自动滚动到当前片段
+      const el = segmentRefs.current[idx]
+      if (el && isPlaying) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+    }
+  }, [currentTime, currentMeeting, audioUrl, activeSegment, isPlaying])
 
   if (!currentMeeting) return null
 
@@ -85,12 +103,51 @@ export function TranscriptPanel({ audioUrl }: TranscriptPanelProps) {
     }
   }
 
+  const togglePlay = () => {
+    if (!audioRef.current) return
+    if (audioRef.current.paused) audioRef.current.play().catch(() => {})
+    else audioRef.current.pause()
+  }
+
+  const playhead = currentTime / (audioRef.current?.duration || 1)
+
   return (
     <div style={{width:'50%',borderRight:'1px solid rgba(255,255,255,0.06)',display:'flex',flexDirection:'column',overflow:'hidden'}}>
       {/* Audio Player */}
       {audioUrl && (
-        <div style={{padding:'10px 14px',borderBottom:'1px solid rgba(255,255,255,0.06)',background:'rgba(0,0,0,0.2)'}}>
-          <audio ref={audioRef} src={audioUrl} controls style={{width:'100%',height:'32px'}} />
+        <div style={{padding:'12px 16px',borderBottom:'1px solid rgba(255,255,255,0.06)',background:'rgba(0,0,0,0.25)'}}>
+          <div style={{display:'flex',alignItems:'center',gap:'10px'}}>
+            <button
+              onClick={togglePlay}
+              style={{width:'32px',height:'32px',borderRadius:'50%',background:'rgba(96,165,250,0.2)',border:'none',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}
+            >
+              {isPlaying ? (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="#93c5fd"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="#93c5fd"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              )}
+            </button>
+            <div style={{flex:1,display:'flex',flexDirection:'column',gap:'4px'}}>
+              <div
+                onClick={(e) => {
+                  const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect()
+                  const ratio = (e.clientX - rect.left) / rect.width
+                  if (audioRef.current && audioRef.current.duration) {
+                    audioRef.current.currentTime = ratio * audioRef.current.duration
+                  }
+                }}
+                style={{height:'4px',background:'rgba(255,255,255,0.1)',borderRadius:'2px',cursor:'pointer',position:'relative'}}
+              >
+                <div style={{height:'100%',background:'linear-gradient(90deg, #3b82f6, #8b5cf6)',borderRadius:'2px',width:`${playhead*100}%`}} />
+                <div style={{position:'absolute',top:'-3px',left:`${playhead*100}%`,width:'10px',height:'10px',borderRadius:'50%',background:'white',transform:'translateX(-50%)',boxShadow:'0 0 4px rgba(0,0,0,0.4)'}} />
+              </div>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:'9px',color:'rgba(255,255,255,0.35)',fontFamily:'monospace'}}>
+                <span>{formatTime(currentTime)}</span>
+                <span>{formatTime(audioRef.current?.duration || 0)}</span>
+              </div>
+            </div>
+          </div>
+          <audio ref={audioRef} src={audioUrl} preload="metadata" style={{display:'none'}} />
         </div>
       )}
 
@@ -133,30 +190,44 @@ export function TranscriptPanel({ audioUrl }: TranscriptPanelProps) {
       )}
 
       {/* Transcript List */}
-      <div style={{flex:1,overflowY:'auto',padding:'14px 16px'}}>
+      <div style={{flex:1,overflowY:'auto',padding:'10px 16px'}}>
         {currentMeeting.segments.length > 0 ? (
-          currentMeeting.segments.map((seg, i) => (
-            <div
-              key={i}
-              onClick={() => handleJumpToTime(seg.start)}
-              style={{
-                display:'flex',gap:'10px',marginBottom:'10px',padding:'6px 8px',borderRadius:'8px',cursor:audioUrl?'pointer':'default',
-                background: activeSegment === i ? 'rgba(96,165,250,0.08)' : 'transparent',
-                borderLeft: activeSegment === i ? '2px solid #60a5fa' : '2px solid transparent',
-                transition:'background 0.2s'
-              }}
-            >
-              <span style={{color:audioUrl?'rgba(96,165,250,0.6)':'rgba(255,255,255,0.2)',fontSize:'10px',fontFamily:'monospace',flexShrink:0,paddingTop:'2px',width:'40px',textAlign:'right'}}>
-                {formatTime(seg.start)}
-              </span>
-              <div style={{flex:1,minWidth:0}}>
-                <span style={{fontWeight:500,fontSize:'10px',color:getSpeakerColor(seg.speaker),textTransform:'uppercase',letterSpacing:'0.03em'}}>
-                  {seg.speaker}
-                </span>
-                <p style={{color: activeSegment === i ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.7)',fontSize:'13px',margin:'3px 0 0',lineHeight:1.6}}>{seg.text}</p>
+          currentMeeting.segments.map((seg, i) => {
+            const isActive = activeSegment === i
+            return (
+              <div
+                key={i}
+                ref={(el) => { segmentRefs.current[i] = el }}
+                style={{
+                  display:'flex',gap:'8px',marginBottom:'8px',padding:'6px 8px',borderRadius:'8px',
+                  background: isActive ? 'rgba(96,165,250,0.1)' : 'transparent',
+                  borderLeft: isActive ? '2px solid #60a5fa' : '2px solid transparent',
+                  transition:'background 0.2s, border-color 0.2s',
+                }}
+              >
+                {/* 时间 + 播放按钮 */}
+                <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',flexShrink:0,width:'36px'}}>
+                  <button
+                    onClick={() => handleJumpToTime(seg.start)}
+                    title={`跳转到 ${formatTime(seg.start)}`}
+                    style={{width:'20px',height:'20px',borderRadius:'50%',background:isActive?'rgba(96,165,250,0.3)':'rgba(255,255,255,0.06)',border:'none',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0}}
+                  >
+                    <svg width="8" height="8" viewBox="0 0 24 24" fill={isActive?'#93c5fd':'rgba(255,255,255,0.5)'}><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                  </button>
+                  <span style={{color:isActive?'rgba(96,165,250,0.8)':'rgba(255,255,255,0.25)',fontSize:'9px',fontFamily:'monospace'}}>
+                    {formatTime(seg.start)}
+                  </span>
+                </div>
+                {/* 文字内容（点击也跳转） */}
+                <div style={{flex:1,minWidth:0,cursor:audioUrl?'pointer':'default'}} onClick={() => handleJumpToTime(seg.start)}>
+                  <span style={{fontWeight:500,fontSize:'10px',color:getSpeakerColor(seg.speaker),textTransform:'uppercase',letterSpacing:'0.03em'}}>
+                    {seg.speaker}
+                  </span>
+                  <p style={{color:isActive?'rgba(255,255,255,0.95)':'rgba(255,255,255,0.7)',fontSize:'13px',margin:'3px 0 0',lineHeight:1.6}}>{seg.text}</p>
+                </div>
               </div>
-            </div>
-          ))
+            )
+          })
         ) : currentMeeting.transcript ? (
           <pre style={{fontSize:'13px',color:'rgba(255,255,255,0.7)',whiteSpace:'pre-wrap',lineHeight:1.6,margin:0}}>{currentMeeting.transcript}</pre>
         ) : (

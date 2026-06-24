@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAppStore } from '../stores/appStore'
+import { BACKEND_PORT } from '../services/api'
 
 interface GenerateDialogProps {
   transcript: string
@@ -15,7 +16,7 @@ const PROVIDERS = [
   { id: 'ollama', name: 'Ollama' },
 ]
 
-const BASE_URL = () => `http://127.0.0.1:${(window as any).__BACKEND_PORT__ || 0}`
+const BASE_URL = () => `http://127.0.0.1:${BACKEND_PORT()}`
 
 export function GenerateDialog({ transcript, meetingId, onConfirm, onCancel }: GenerateDialogProps) {
   const { settings } = useAppStore()

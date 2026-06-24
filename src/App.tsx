@@ -8,7 +8,7 @@ import { ProgressBar } from './components/ProgressBar'
 import { SettingsModal } from './components/SettingsModal'
 import { GenerateDialog } from './components/GenerateDialog'
 import { Onboarding } from './components/Onboarding'
-import { uploadAudio } from './services/api'
+import { uploadAudio, getApiKeys, getMeetings, getMeeting, BACKEND_PORT } from './services/api'
 import { connectTranscribeWS, ChatWebSocket } from './services/websocket'
 
 export default function App() {
@@ -17,8 +17,6 @@ export default function App() {
   const [showGenerateDialog, setShowGenerateDialog] = useState(false)
   const [pendingMeetingId, setPendingMeetingId] = useState('')
   const [showOnboarding, setShowOnboarding] = useState(false)
-
-  const port = store.backendPort || (window as any).__BACKEND_PORT__ || 0
 
   const handleFileDrop = useCallback(async (file: File) => {
     store.setTranscribing(true)
@@ -40,7 +38,6 @@ export default function App() {
       store.addMeeting(newMeeting)
 
       connectTranscribeWS(
-        port,
         job_id,
         (progress) => store.setTranscribeProgress(progress),
         (segment) => {
@@ -58,7 +55,6 @@ export default function App() {
             transcript: result.full_text,
             segments: result.segments,
           })
-          // 转录完成后弹出确认对话框
           setPendingMeetingId(job_id)
           setShowGenerateDialog(true)
         },
@@ -71,18 +67,17 @@ export default function App() {
       store.setTranscribing(false)
       alert(`上传失败: ${e.message}`)
     }
-  }, [port, store])
+  }, [store])
 
   const handleGenerate = useCallback(async (options: { provider: string; model: string; customPrompt: string }) => {
     setShowGenerateDialog(false)
     const meeting = store.meetings.find(m => m.id === pendingMeetingId) || store.currentMeeting
     if (!meeting?.transcript) return
 
-    // 清空旧纪要
     store.updateMeeting(pendingMeetingId, { minutes: '' })
     store.setGenerating(true)
 
-    const ws = new ChatWebSocket(port, (data) => {
+    const ws = new ChatWebSocket((data) => {
       if (data.type === 'chunk') {
         const currentMeeting = store.currentMeeting
         store.updateMeeting(pendingMeetingId, {
@@ -108,7 +103,7 @@ export default function App() {
       model: options.model,
       custom_prompt: options.customPrompt,
     })
-  }, [pendingMeetingId, port, store])
+  }, [pendingMeetingId, store])
 
   const handleChat = useCallback((message: string) => {
     if (!store.currentMeeting) return
@@ -120,7 +115,7 @@ export default function App() {
     store.setGenerating(true)
 
     let responseText = ''
-    const ws = new ChatWebSocket(port, (data) => {
+    const ws = new ChatWebSocket((data) => {
       if (data.type === 'chunk') {
         responseText += data.content
         store.updateMeeting(meeting.id, {
@@ -151,33 +146,59 @@ export default function App() {
       })
       setChatWs(ws)
     })
-  }, [chatWs, port, store])
+  }, [chatWs, store])
 
   const currentMeeting = store.currentMeeting
 
-  // 启动时检测首次使用
   useState(() => {
     setTimeout(async () => {
       try {
-        const resp = await fetch(`http://127.0.0.1:${(window as any).__BACKEND_PORT__}/api/settings/apikeys`)
-        const keys = await resp.json()
-        const configured = keys.claude?.configured || keys.openai?.configured || keys.gemini?.configured
-        if (!configured) {
-          setShowOnboarding(true)
+        const meetings = await getMeetings()
+        const loaded: any[] = []
+        for (const m of meetings.slice(0, 20)) {
+          try {
+            const detail = await getMeeting(m.id)
+            loaded.push({
+              id: detail.id,
+              filename: detail.filename,
+              duration: detail.duration || 0,
+              transcript: detail.transcript || '',
+              minutes: detail.minutes || '',
+              segments: [],
+              chatHistory: (detail.chat_history || []).map((c: any) => ({ role: c.role, content: c.content })),
+              created_at: detail.created_at,
+            })
+          } catch {}
         }
+        useAppStore.setState({ meetings: loaded, currentMeeting: null })
+        const keys = await getApiKeys()
+        const configured = keys.claude?.configured || keys.openai?.configured || keys.gemini?.configured
+        if (!configured) setShowOnboarding(true)
       } catch {}
-    }, 500)
+    }, 300)
   })
 
+  const audioUrl = currentMeeting
+    ? `http://127.0.0.1:${BACKEND_PORT()}/api/audio?job_id=${currentMeeting.id}&filename=${encodeURIComponent(currentMeeting.filename)}`
+    : ''
+
   return (
-    <div style={{width:'100%',height:'100%',display:'flex',flexDirection:'column',overflow:'hidden',background:'#0f0f12'}}>
+    <div
+      onDragOver={(e) => { e.preventDefault(); e.stopPropagation() }}
+      onDrop={(e) => {
+        e.preventDefault(); e.stopPropagation()
+        const file = e.dataTransfer.files[0]
+        if (file) handleFileDrop(file)
+      }}
+      style={{width:'100%',height:'100%',display:'flex',flexDirection:'column',overflow:'hidden',background:'#0f0f12'}}
+    >
       <div style={{display:'flex',flex:1,overflow:'hidden'}}>
         <Sidebar onFileDrop={handleFileDrop} />
 
         <main style={{flex:1,display:'flex',overflow:'hidden',borderTopLeftRadius:'16px',background:'#1a1a22'}}>
           {currentMeeting ? (
             <>
-              <TranscriptPanel audioUrl={`${(window as any).__BACKEND_PORT__ ? `http://127.0.0.1:${(window as any).__BACKEND_PORT__}` : ''}/api/audio/${currentMeeting.id}/${encodeURIComponent(currentMeeting.filename)}`} />
+              <TranscriptPanel audioUrl={audioUrl} />
               <MinutesPanel onChat={handleChat} onRegenerate={() => { setPendingMeetingId(currentMeeting.id); setShowGenerateDialog(true) }} />
             </>
           ) : (

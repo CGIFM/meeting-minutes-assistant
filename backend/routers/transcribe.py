@@ -16,12 +16,12 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 _jobs: dict[str, dict] = {}
 
 
-@router.get("/audio/{job_id}/{filename}")
+@router.get("/audio")
 async def get_audio_file(job_id: str, filename: str):
     """提供原始音频文件用于播放"""
     audio_dir = DATA_DIR / job_id
     if not audio_dir.exists():
-        raise HTTPException(status_code=404, detail="文件不存在")
+        raise HTTPException(status_code=404, detail="会议不存在")
     file_path = audio_dir / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="文件不存在")
