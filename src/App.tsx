@@ -13,7 +13,7 @@ export default function App() {
   const store = useAppStore()
   const [chatWs, setChatWs] = useState<ChatWebSocket | null>(null)
 
-  const port = store.backendPort || 18080
+  const port = store.backendPort || 58886
 
   const handleFileDrop = useCallback(async (file: File) => {
     store.setTranscribing(true)
@@ -88,7 +88,7 @@ export default function App() {
   }, [port, store])
 
   const handleChat = useCallback((message: string) => {
-    if (!chatWs || !store.currentMeeting) return
+    if (!store.currentMeeting) return
 
     const meeting = store.currentMeeting
     store.updateMeeting(meeting.id, {
@@ -131,11 +131,11 @@ export default function App() {
   }, [chatWs, port, store])
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden">
+    <div className="h-screen flex flex-col overflow-hidden bg-[#0f0f12]">
       <div className="flex flex-1 overflow-hidden">
         <Sidebar onFileDrop={handleFileDrop} />
 
-        <main className="flex-1 flex overflow-hidden">
+        <main className="flex-1 flex overflow-hidden rounded-tl-2xl bg-[#1a1a22] m-0">
           {store.currentMeeting ? (
             <>
               <TranscriptPanel />

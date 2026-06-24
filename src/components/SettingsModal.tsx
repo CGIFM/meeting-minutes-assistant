@@ -61,26 +61,28 @@ export function SettingsModal() {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-xl w-[640px] max-h-[80vh] flex flex-col">
-        <div className="flex items-center justify-between p-4 border-b">
-          <h2 className="text-lg font-semibold">设置</h2>
-          <button onClick={() => setShowSettings(false)} className="text-gray-400 hover:text-gray-600">
-            <X size={20} />
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className="bg-[#1a1a22] border border-white/[0.08] rounded-2xl shadow-2xl w-[600px] max-h-[75vh] flex flex-col">
+        <div className="flex items-center justify-between p-5 border-b border-white/[0.06]">
+          <h2 className="text-base font-semibold text-white/90">设置</h2>
+          <button onClick={() => setShowSettings(false)} className="text-white/30 hover:text-white/60 transition">
+            <X size={18} />
           </button>
         </div>
 
-        <div className="flex border-b">
+        <div className="flex border-b border-white/[0.06] px-5">
           {[
             { id: 'llm' as const, label: 'LLM 设置' },
-            { id: 'asr' as const, label: 'ASR 设置' },
+            { id: 'asr' as const, label: '语音识别' },
             { id: 'prompt' as const, label: '提示词' },
           ].map((t) => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition ${
-                tab === t.id ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+              className={`px-4 py-3 text-xs font-medium border-b-2 transition-all ${
+                tab === t.id
+                  ? 'border-blue-400 text-blue-300'
+                  : 'border-transparent text-white/30 hover:text-white/50'
               }`}
             >
               {t.label}
@@ -88,15 +90,15 @@ export function SettingsModal() {
           ))}
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex-1 overflow-y-auto p-5">
           {tab === 'llm' && (
-            <div className="space-y-4">
+            <div className="space-y-5">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">默认提供商</label>
+                <label className="block text-xs font-medium text-white/50 mb-2">默认提供商</label>
                 <select
                   value={provider}
                   onChange={(e) => setProvider(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm text-white/80 focus:outline-none focus:border-blue-400/40"
                 >
                   {PROVIDERS.map((p) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
@@ -105,22 +107,23 @@ export function SettingsModal() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">默认模型（可选）</label>
+                <label className="block text-xs font-medium text-white/50 mb-2">默认模型（可选）</label>
                 <input
                   type="text"
                   value={model}
                   onChange={(e) => setModel(e.target.value)}
                   placeholder="留空使用默认模型"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm text-white/80 placeholder:text-white/20 focus:outline-none focus:border-blue-400/40"
                 />
               </div>
 
-              <div className="border-t pt-4">
-                <h3 className="text-sm font-medium text-gray-700 mb-3">API Keys</h3>
+              <div className="border-t border-white/[0.06] pt-5">
+                <h3 className="text-xs font-medium text-white/50 mb-4">API Keys</h3>
                 {PROVIDERS.filter(p => p.id !== 'ollama').map((p) => (
-                  <div key={p.id} className="mb-3">
-                    <label className="block text-xs text-gray-500 mb-1">
-                      {p.name} {apiKeys[p.id] && <span className="text-green-600">({apiKeys[p.id]})</span>}
+                  <div key={p.id} className="mb-4">
+                    <label className="block text-[11px] text-white/30 mb-1.5">
+                      {p.name}
+                      {apiKeys[p.id] && <span className="text-emerald-400/80 ml-2">{apiKeys[p.id]}</span>}
                     </label>
                     <div className="flex gap-2">
                       <input
@@ -128,11 +131,11 @@ export function SettingsModal() {
                         value={keyInputs[p.id] || ''}
                         onChange={(e) => setKeyInputs({ ...keyInputs, [p.id]: e.target.value })}
                         placeholder={p.placeholder}
-                        className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
+                        className="flex-1 bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2 text-sm text-white/80 placeholder:text-white/15 focus:outline-none focus:border-blue-400/40"
                       />
                       <button
                         onClick={() => handleSaveKey(p.id)}
-                        className="px-3 py-1.5 bg-gray-800 text-white text-xs rounded-lg hover:bg-gray-900"
+                        className="px-4 py-2 bg-white/[0.06] border border-white/[0.08] text-white/60 text-xs rounded-xl hover:bg-white/[0.1] hover:text-white/80 transition"
                       >
                         保存
                       </button>
@@ -146,18 +149,19 @@ export function SettingsModal() {
           {tab === 'asr' && (
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-xs font-medium text-white/50 mb-2">
                   热词（每行一个）
                 </label>
-                <p className="text-xs text-gray-500 mb-2">
-                  添加容易被识别错误的专有名词，如人名、公司名、技术术语等。ASR 引擎会优先识别这些词。
+                <p className="text-[11px] text-white/25 mb-3 leading-relaxed">
+                  添加容易被识别错误的专有名词，如人名、公司名、技术术语等。<br />
+                  ASR 引擎会优先识别这些词。
                 </p>
                 <textarea
                   value={hotwords}
                   onChange={(e) => setHotwords(e.target.value)}
-                  rows={8}
-                  placeholder={"Claude\nKubernetes\n张三\n李四\n..."}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono"
+                  rows={10}
+                  placeholder={"Claude\nKubernetes\n张三\n李四"}
+                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-white/80 font-mono placeholder:text-white/15 focus:outline-none focus:border-blue-400/40 resize-none"
                 />
               </div>
             </div>
@@ -166,22 +170,22 @@ export function SettingsModal() {
           {tab === 'prompt' && (
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-xs font-medium text-white/50 mb-2">
                   会议纪要提示词模板
                 </label>
-                <p className="text-xs text-gray-500 mb-2">
-                  使用 {'{transcript}'} 作为转录文本的占位符。
+                <p className="text-[11px] text-white/25 mb-3">
+                  使用 {'{transcript}'} 作为转录文本的占位符
                 </p>
                 <textarea
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
-                  rows={16}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono leading-relaxed"
+                  rows={14}
+                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-3 text-xs text-white/70 font-mono leading-relaxed placeholder:text-white/15 focus:outline-none focus:border-blue-400/40 resize-none"
                 />
               </div>
               <button
                 onClick={() => setPrompt('')}
-                className="text-sm text-blue-600 hover:underline"
+                className="text-xs text-blue-400/70 hover:text-blue-300 transition"
               >
                 恢复默认提示词
               </button>
@@ -189,16 +193,16 @@ export function SettingsModal() {
           )}
         </div>
 
-        <div className="p-4 border-t flex justify-end gap-2">
+        <div className="p-5 border-t border-white/[0.06] flex justify-end gap-3">
           <button
             onClick={() => setShowSettings(false)}
-            className="px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
+            className="px-5 py-2.5 text-xs text-white/50 border border-white/[0.08] rounded-xl hover:bg-white/[0.04] transition"
           >
             取消
           </button>
           <button
             onClick={handleSave}
-            className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            className="px-5 py-2.5 text-xs bg-blue-500/20 text-blue-300 border border-blue-400/30 rounded-xl hover:bg-blue-500/30 transition"
           >
             保存设置
           </button>

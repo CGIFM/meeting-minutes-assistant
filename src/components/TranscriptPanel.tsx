@@ -14,7 +14,7 @@ export function TranscriptPanel() {
   }
 
   const speakerColors: Record<string, string> = {}
-  const colors = ['text-blue-600', 'text-green-600', 'text-purple-600', 'text-orange-600', 'text-pink-600']
+  const colors = ['text-blue-400', 'text-emerald-400', 'text-purple-400', 'text-amber-400', 'text-rose-400']
   let colorIdx = 0
 
   const getSpeakerColor = (speaker: string) => {
@@ -26,31 +26,36 @@ export function TranscriptPanel() {
   }
 
   return (
-    <div className="w-1/2 border-r border-gray-200 flex flex-col overflow-hidden">
-      <div className="p-3 border-b border-gray-200 bg-white">
-        <h2 className="text-sm font-semibold text-gray-700">转录结果</h2>
-        <p className="text-xs text-gray-500">{currentMeeting.filename}</p>
+    <div className="w-1/2 border-r border-white/[0.06] flex flex-col overflow-hidden">
+      <div className="p-4 border-b border-white/[0.06]">
+        <h2 className="text-xs font-semibold text-white/50 uppercase tracking-wider">转录结果</h2>
+        <p className="text-[11px] text-white/25 mt-1 truncate">{currentMeeting.filename}</p>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-2">
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {currentMeeting.segments.length > 0 ? (
           currentMeeting.segments.map((seg, i) => (
-            <div key={i} className="flex gap-2 text-sm leading-relaxed">
-              <span className="text-gray-400 text-xs font-mono shrink-0 pt-0.5 w-12 text-right">
+            <div key={i} className="flex gap-3 group">
+              <span className="text-white/20 text-[10px] font-mono shrink-0 pt-1 w-10 text-right">
                 {formatTime(seg.start)}
               </span>
-              <div>
-                <span className={`font-medium text-xs ${getSpeakerColor(seg.speaker)}`}>
+              <div className="flex-1">
+                <span className={`font-medium text-[10px] uppercase tracking-wider ${getSpeakerColor(seg.speaker)}`}>
                   {seg.speaker}
                 </span>
-                <p className="text-gray-800 mt-0.5">{seg.text}</p>
+                <p className="text-white/70 text-sm mt-0.5 leading-relaxed">{seg.text}</p>
               </div>
             </div>
           ))
         ) : currentMeeting.transcript ? (
-          <pre className="text-sm text-gray-800 whitespace-pre-wrap">{currentMeeting.transcript}</pre>
+          <pre className="text-sm text-white/70 whitespace-pre-wrap leading-relaxed">{currentMeeting.transcript}</pre>
         ) : (
-          <div className="text-center text-gray-400 py-8">转录中...</div>
+          <div className="flex items-center justify-center h-full">
+            <div className="text-center">
+              <div className="w-8 h-8 border-2 border-white/10 border-t-blue-400 rounded-full animate-spin mx-auto mb-3" />
+              <p className="text-white/30 text-sm">正在转录...</p>
+            </div>
+          </div>
         )}
       </div>
     </div>
