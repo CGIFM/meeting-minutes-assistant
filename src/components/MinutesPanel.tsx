@@ -50,6 +50,43 @@ export function MinutesPanel({ onChat, onRegenerate }: MinutesPanelProps) {
     URL.revokeObjectURL(url)
   }
 
+  const BASE_URL = `http://127.0.0.1:${(window as any).__BACKEND_PORT__ || 0}`
+
+  const callExport = async (format: string) => {
+    if (!currentMeeting.minutes) return
+    try {
+      const resp = await fetch(`${BASE_URL}/api/export/${format}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename: currentMeeting.filename,
+          content: currentMeeting.minutes,
+          minutes: currentMeeting.minutes,
+          transcript: currentMeeting.transcript,
+        }),
+      })
+      const ctype = resp.headers.get('content-type') || ''
+      if (ctype.includes('application/json')) {
+        const result = await resp.json()
+        alert(result.message || (result.success ? '导出成功' : '导出失败'))
+      } else {
+        const blob = await resp.blob()
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `${currentMeeting.filename.replace(/\.[^.]+$/, '')}_会议纪要.${format === 'pdf' ? 'pdf' : 'docx'}`
+        a.click()
+        URL.revokeObjectURL(url)
+      }
+    } catch (e: any) {
+      alert(`导出失败: ${e.message}`)
+    }
+  }
+
+  const handleExportObsidian = () => callExport('obsidian')
+  const handleExportPdf = () => callExport('pdf')
+  const handleExportWord = () => callExport('word')
+
   return (
     <div style={{width:'50%',display:'flex',flexDirection:'column',overflow:'hidden'}}>
       {/* Header */}
@@ -64,17 +101,26 @@ export function MinutesPanel({ onChat, onRegenerate }: MinutesPanelProps) {
           )}
         </div>
         {currentMeeting.minutes && (
-          <div style={{display:'flex',gap:'6px'}}>
+          <div style={{display:'flex',gap:'4px',flexWrap:'wrap',justifyContent:'flex-end'}}>
             {onRegenerate && (
               <button onClick={onRegenerate} style={{fontSize:'10px',color:'rgba(255,255,255,0.4)',background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:'6px',padding:'4px 8px',cursor:'pointer'}}>
-                重新生成
+                重生成
               </button>
             )}
-            <button onClick={handleCopyMinutes} style={{fontSize:'10px',color:'rgba(255,255,255,0.4)',background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:'6px',padding:'4px 8px',cursor:'pointer'}}>
-              复制
+            <button onClick={handleExportObsidian} title="保存到 Obsidian 的会议纪要文件夹" style={{fontSize:'10px',color:'#a78bfa',background:'rgba(167,139,250,0.1)',border:'1px solid rgba(167,139,250,0.25)',borderRadius:'6px',padding:'4px 8px',cursor:'pointer'}}>
+              Obsidian
+            </button>
+            <button onClick={handleExportPdf} style={{fontSize:'10px',color:'rgba(255,255,255,0.4)',background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:'6px',padding:'4px 8px',cursor:'pointer'}}>
+              PDF
+            </button>
+            <button onClick={handleExportWord} style={{fontSize:'10px',color:'rgba(255,255,255,0.4)',background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:'6px',padding:'4px 8px',cursor:'pointer'}}>
+              Word
             </button>
             <button onClick={handleExportMd} style={{fontSize:'10px',color:'rgba(255,255,255,0.4)',background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:'6px',padding:'4px 8px',cursor:'pointer'}}>
-              导出 .md
+              .md
+            </button>
+            <button onClick={handleCopyMinutes} style={{fontSize:'10px',color:'rgba(255,255,255,0.4)',background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:'6px',padding:'4px 8px',cursor:'pointer'}}>
+              复制
             </button>
           </div>
         )}

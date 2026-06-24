@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import { useAppStore } from '../stores/appStore'
 import { RecordButton } from './RecordButton'
 
@@ -8,6 +8,7 @@ interface SidebarProps {
 
 export function Sidebar({ onFileDrop }: SidebarProps) {
   const { meetings, currentMeeting, setCurrentMeeting, setShowSettings, isTranscribing } = useAppStore()
+  const [searchQuery, setSearchQuery] = useState('')
 
   const handleFileSelect = useCallback(() => {
     const input = document.createElement('input')
@@ -59,14 +60,29 @@ export function Sidebar({ onFileDrop }: SidebarProps) {
       {/* Meeting List */}
       <div style={{flex:1,overflowY:'auto',padding:'0 8px'}}>
         <div style={{padding:'4px 8px 8px',fontSize:'10px',color:'rgba(255,255,255,0.25)',textTransform:'uppercase',letterSpacing:'0.1em',fontWeight:500}}>
-          历史记录
+          历史记录 {meetings.length > 0 && `(${meetings.length})`}
         </div>
-        {meetings.length === 0 ? (
-          <div style={{padding:'32px 12px',textAlign:'center',color:'rgba(255,255,255,0.15)',fontSize:'11px',lineHeight:1.8}}>
-            暂无记录<br/>拖入音频开始
-          </div>
-        ) : (
-          meetings.map(meeting => (
+        {meetings.length > 3 && (
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="搜索会议..."
+            style={{width:'100%',boxSizing:'border-box',background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:'8px',padding:'6px 10px',fontSize:'11px',color:'rgba(255,255,255,0.8)',outline:'none',marginBottom:'8px'}}
+          />
+        )}
+        {(() => {
+          const filtered = searchQuery
+            ? meetings.filter(m => m.filename.toLowerCase().includes(searchQuery.toLowerCase()))
+            : meetings
+          if (filtered.length === 0) {
+            return (
+              <div style={{padding:'32px 12px',textAlign:'center',color:'rgba(255,255,255,0.15)',fontSize:'11px',lineHeight:1.8}}>
+                {searchQuery ? '未找到匹配' : '暂无记录'}<br/>{!searchQuery && '拖入音频开始'}
+              </div>
+            )
+          }
+          return filtered.map(meeting => (
             <button
               key={meeting.id}
               onClick={() => setCurrentMeeting(meeting)}
@@ -85,7 +101,7 @@ export function Sidebar({ onFileDrop }: SidebarProps) {
               </div>
             </button>
           ))
-        )}
+        })()}
       </div>
 
       {/* Settings */}

@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from routers import transcribe, llm, settings
+from routers import transcribe, llm, settings, export
 from db.database import init_db
 
 
@@ -30,6 +30,7 @@ app.add_middleware(
 app.include_router(transcribe.router, prefix="/api")
 app.include_router(llm.router, prefix="/api")
 app.include_router(settings.router, prefix="/api")
+app.include_router(export.router, prefix="/api")
 
 # 静态文件：前端构建产物
 dist_dir = Path(__file__).parent.parent / "dist"
