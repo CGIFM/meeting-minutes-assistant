@@ -1,5 +1,6 @@
 import { useCallback } from 'react'
 import { useAppStore } from '../stores/appStore'
+import { RecordButton } from './RecordButton'
 
 interface SidebarProps {
   onFileDrop: (file: File) => void
@@ -42,7 +43,7 @@ export function Sidebar({ onFileDrop }: SidebarProps) {
         </div>
       </div>
 
-      {/* Import Button */}
+      {/* Import & Record Buttons */}
       <div style={{padding:'0 12px 12px'}}>
         <button
           onClick={handleFileSelect}
@@ -53,6 +54,7 @@ export function Sidebar({ onFileDrop }: SidebarProps) {
           导入音频
         </button>
       </div>
+      <RecordButton onRecordingComplete={onFileDrop} />
 
       {/* Meeting List */}
       <div style={{flex:1,overflowY:'auto',padding:'0 8px'}}>
