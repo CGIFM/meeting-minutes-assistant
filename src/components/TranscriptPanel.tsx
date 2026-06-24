@@ -1,7 +1,10 @@
-import { useAppStore } from '../stores/appStore'
+import { useAppStore, TranscriptSegment } from '../stores/appStore'
+import { useState } from 'react'
 
 export function TranscriptPanel() {
-  const { currentMeeting } = useAppStore()
+  const { currentMeeting, updateMeeting } = useAppStore()
+  const [editingSpeaker, setEditingSpeaker] = useState<string | null>(null)
+  const [newName, setNewName] = useState('')
 
   if (!currentMeeting) return null
 
@@ -14,7 +17,7 @@ export function TranscriptPanel() {
   }
 
   const speakerColors: Record<string, string> = {}
-  const colors = ['text-blue-400', 'text-emerald-400', 'text-purple-400', 'text-amber-400', 'text-rose-400']
+  const colors = ['#60a5fa', '#34d399', '#a78bfa', '#fbbf24', '#fb7185']
   let colorIdx = 0
 
   const getSpeakerColor = (speaker: string) => {
@@ -25,39 +28,109 @@ export function TranscriptPanel() {
     return speakerColors[speaker]
   }
 
+  const uniqueSpeakers = [...new Set(currentMeeting.segments.map(s => s.speaker))]
+
+  const handleRenameSpeaker = (oldName: string) => {
+    if (!newName.trim() || newName === oldName) {
+      setEditingSpeaker(null)
+      return
+    }
+    const updatedSegments = currentMeeting.segments.map(seg =>
+      seg.speaker === oldName ? { ...seg, speaker: newName.trim() } : seg
+    )
+    const updatedTranscript = updatedSegments.map(seg =>
+      `[${formatTime(seg.start)}] ${seg.speaker}: ${seg.text}`
+    ).join('\n')
+
+    updateMeeting(currentMeeting.id, {
+      segments: updatedSegments,
+      transcript: updatedTranscript,
+    })
+    setEditingSpeaker(null)
+    setNewName('')
+  }
+
+  const handleCopyTranscript = () => {
+    const text = currentMeeting.segments.map(seg =>
+      `[${formatTime(seg.start)}] ${seg.speaker}: ${seg.text}`
+    ).join('\n')
+    navigator.clipboard.writeText(text)
+  }
+
   return (
-    <div className="w-1/2 border-r border-white/[0.06] flex flex-col overflow-hidden">
-      <div className="p-4 border-b border-white/[0.06]">
-        <h2 className="text-xs font-semibold text-white/50 uppercase tracking-wider">转录结果</h2>
-        <p className="text-[11px] text-white/25 mt-1 truncate">{currentMeeting.filename}</p>
+    <div style={{width:'50%',borderRight:'1px solid rgba(255,255,255,0.06)',display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      {/* Header */}
+      <div style={{padding:'16px',borderBottom:'1px solid rgba(255,255,255,0.06)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <div>
+          <h2 style={{fontSize:'11px',fontWeight:600,color:'rgba(255,255,255,0.5)',textTransform:'uppercase',letterSpacing:'0.05em',margin:0}}>转录结果</h2>
+          <p style={{fontSize:'11px',color:'rgba(255,255,255,0.25)',margin:'4px 0 0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{currentMeeting.filename}</p>
+        </div>
+        <button
+          onClick={handleCopyTranscript}
+          style={{fontSize:'10px',color:'rgba(255,255,255,0.4)',background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:'6px',padding:'4px 8px',cursor:'pointer'}}
+        >
+          复制
+        </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      {/* Speaker Tags */}
+      {uniqueSpeakers.length > 0 && (
+        <div style={{padding:'8px 16px',borderBottom:'1px solid rgba(255,255,255,0.04)',display:'flex',gap:'6px',flexWrap:'wrap'}}>
+          {uniqueSpeakers.map(speaker => (
+            <div key={speaker} style={{display:'flex',alignItems:'center',gap:'4px'}}>
+              {editingSpeaker === speaker ? (
+                <input
+                  autoFocus
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  onBlur={() => handleRenameSpeaker(speaker)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleRenameSpeaker(speaker)}
+                  style={{fontSize:'10px',background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.2)',borderRadius:'4px',padding:'2px 6px',color:'white',width:'80px',outline:'none'}}
+                />
+              ) : (
+                <span
+                  onClick={() => { setEditingSpeaker(speaker); setNewName(speaker) }}
+                  style={{fontSize:'10px',color:getSpeakerColor(speaker),background:'rgba(255,255,255,0.04)',borderRadius:'4px',padding:'2px 8px',cursor:'pointer',border:'1px solid rgba(255,255,255,0.06)'}}
+                  title="点击重命名"
+                >
+                  {speaker}
+                </span>
+              )}
+            </div>
+          ))}
+          <span style={{fontSize:'9px',color:'rgba(255,255,255,0.2)',alignSelf:'center'}}>点击改名</span>
+        </div>
+      )}
+
+      {/* Transcript List */}
+      <div style={{flex:1,overflowY:'auto',padding:'16px'}}>
         {currentMeeting.segments.length > 0 ? (
           currentMeeting.segments.map((seg, i) => (
-            <div key={i} className="flex gap-3 group">
-              <span className="text-white/20 text-[10px] font-mono shrink-0 pt-1 w-10 text-right">
+            <div key={i} style={{display:'flex',gap:'10px',marginBottom:'10px'}}>
+              <span style={{color:'rgba(255,255,255,0.2)',fontSize:'10px',fontFamily:'monospace',flexShrink:0,paddingTop:'2px',width:'40px',textAlign:'right'}}>
                 {formatTime(seg.start)}
               </span>
-              <div className="flex-1">
-                <span className={`font-medium text-[10px] uppercase tracking-wider ${getSpeakerColor(seg.speaker)}`}>
+              <div style={{flex:1}}>
+                <span style={{fontWeight:500,fontSize:'10px',color:getSpeakerColor(seg.speaker),textTransform:'uppercase',letterSpacing:'0.03em'}}>
                   {seg.speaker}
                 </span>
-                <p className="text-white/70 text-sm mt-0.5 leading-relaxed">{seg.text}</p>
+                <p style={{color:'rgba(255,255,255,0.7)',fontSize:'13px',margin:'3px 0 0',lineHeight:1.6}}>{seg.text}</p>
               </div>
             </div>
           ))
         ) : currentMeeting.transcript ? (
-          <pre className="text-sm text-white/70 whitespace-pre-wrap leading-relaxed">{currentMeeting.transcript}</pre>
+          <pre style={{fontSize:'13px',color:'rgba(255,255,255,0.7)',whiteSpace:'pre-wrap',lineHeight:1.6,margin:0}}>{currentMeeting.transcript}</pre>
         ) : (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center">
-              <div className="w-8 h-8 border-2 border-white/10 border-t-blue-400 rounded-full animate-spin mx-auto mb-3" />
-              <p className="text-white/30 text-sm">正在转录...</p>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%'}}>
+            <div style={{textAlign:'center'}}>
+              <div style={{width:'32px',height:'32px',border:'2px solid rgba(255,255,255,0.1)',borderTop:'2px solid #60a5fa',borderRadius:'50%',animation:'spin 1s linear infinite',margin:'0 auto 12px'}} />
+              <p style={{color:'rgba(255,255,255,0.3)',fontSize:'13px',margin:0}}>正在转录...</p>
             </div>
           </div>
         )}
       </div>
+
+      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
     </div>
   )
 }

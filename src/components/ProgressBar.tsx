@@ -9,27 +9,27 @@ export function ProgressBar() {
   if (!stage) return null
 
   return (
-    <div className="h-11 bg-[#0f0f12] border-t border-white/5 flex items-center px-5 gap-3">
-      <div className="flex items-center gap-2 text-xs text-white/50 shrink-0">
-        <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse" />
+    <div style={{height:'44px',background:'#0f0f12',borderTop:'1px solid rgba(255,255,255,0.05)',display:'flex',alignItems:'center',padding:'0 20px',gap:'12px'}}>
+      <div style={{display:'flex',alignItems:'center',gap:'8px',fontSize:'11px',color:'rgba(255,255,255,0.5)',flexShrink:0}}>
+        <div style={{width:'6px',height:'6px',background:'#60a5fa',borderRadius:'50%',animation:'pulse 1.5s infinite'}} />
         {stage}
       </div>
 
-      {progress !== undefined ? (
-        <>
-          <div className="flex-1 h-1.5 bg-white/[0.05] rounded-full overflow-hidden">
-            <div
-              className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full transition-all duration-500 ease-out"
-              style={{ width: `${Math.round(progress * 100)}%` }}
-            />
-          </div>
-          <span className="text-[10px] text-white/30 font-mono shrink-0">{Math.round(progress * 100)}%</span>
-        </>
-      ) : (
-        <div className="flex-1 h-1.5 bg-white/[0.05] rounded-full overflow-hidden">
-          <div className="h-full w-1/3 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full animate-pulse" />
-        </div>
+      <div style={{flex:1,height:'4px',background:'rgba(255,255,255,0.05)',borderRadius:'2px',overflow:'hidden'}}>
+        {progress !== undefined ? (
+          <div style={{height:'100%',background:'linear-gradient(90deg, #3b82f6, #8b5cf6)',borderRadius:'2px',transition:'width 0.5s ease-out',width:`${Math.round(progress * 100)}%`}} />
+        ) : (
+          <div style={{height:'100%',width:'33%',background:'linear-gradient(90deg, #3b82f6, #8b5cf6)',borderRadius:'2px',animation:'pulse 1.5s infinite'}} />
+        )}
+      </div>
+
+      {progress !== undefined && (
+        <span style={{fontSize:'10px',color:'rgba(255,255,255,0.3)',fontFamily:'monospace',flexShrink:0}}>
+          {Math.round(progress * 100)}%
+        </span>
       )}
+
+      <style>{`@keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.3 } }`}</style>
     </div>
   )
 }

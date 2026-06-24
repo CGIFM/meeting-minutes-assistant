@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { useAppStore } from '../stores/appStore'
-import { Send, RefreshCw } from 'lucide-react'
 
 interface MinutesPanelProps {
   onChat: (message: string) => void
@@ -33,47 +32,85 @@ export function MinutesPanel({ onChat }: MinutesPanelProps) {
     }
   }
 
+  const handleCopyMinutes = () => {
+    if (currentMeeting.minutes) {
+      navigator.clipboard.writeText(currentMeeting.minutes)
+    }
+  }
+
+  const handleExportMd = () => {
+    if (!currentMeeting.minutes) return
+    const blob = new Blob([currentMeeting.minutes], { type: 'text/markdown' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${currentMeeting.filename.replace(/\.[^.]+$/, '')}_会议纪要.md`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
-    <div className="w-1/2 flex flex-col overflow-hidden">
-      <div className="p-4 border-b border-white/[0.06] flex items-center justify-between">
-        <h2 className="text-xs font-semibold text-white/50 uppercase tracking-wider">会议纪要</h2>
-        {isGenerating && (
-          <span className="text-[10px] text-blue-400 flex items-center gap-1.5 bg-blue-400/10 px-2 py-1 rounded-full">
-            <RefreshCw size={9} className="animate-spin" /> 生成中
-          </span>
+    <div style={{width:'50%',display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      {/* Header */}
+      <div style={{padding:'16px',borderBottom:'1px solid rgba(255,255,255,0.06)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+          <h2 style={{fontSize:'11px',fontWeight:600,color:'rgba(255,255,255,0.5)',textTransform:'uppercase',letterSpacing:'0.05em',margin:0}}>会议纪要</h2>
+          {isGenerating && (
+            <span style={{fontSize:'10px',color:'#60a5fa',background:'rgba(96,165,250,0.1)',padding:'2px 8px',borderRadius:'99px',display:'flex',alignItems:'center',gap:'4px'}}>
+              <span style={{width:'6px',height:'6px',borderRadius:'50%',background:'#60a5fa',animation:'pulse 1.5s infinite'}} />
+              生成中
+            </span>
+          )}
+        </div>
+        {currentMeeting.minutes && (
+          <div style={{display:'flex',gap:'6px'}}>
+            <button onClick={handleCopyMinutes} style={{fontSize:'10px',color:'rgba(255,255,255,0.4)',background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:'6px',padding:'4px 8px',cursor:'pointer'}}>
+              复制
+            </button>
+            <button onClick={handleExportMd} style={{fontSize:'10px',color:'rgba(255,255,255,0.4)',background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:'6px',padding:'4px 8px',cursor:'pointer'}}>
+              导出 .md
+            </button>
+          </div>
         )}
       </div>
 
-      <div ref={contentRef} className="flex-1 overflow-y-auto p-5 space-y-4">
+      {/* Content */}
+      <div ref={contentRef} style={{flex:1,overflowY:'auto',padding:'20px'}}>
         {currentMeeting.minutes ? (
-          <div className="prose prose-sm prose-invert max-w-none prose-headings:text-white/80 prose-p:text-white/60 prose-li:text-white/60 prose-strong:text-white/80 prose-td:text-white/50 prose-th:text-white/70">
+          <div className="prose prose-sm prose-invert max-w-none" style={{color:'rgba(255,255,255,0.7)',fontSize:'13px',lineHeight:1.8}}>
             <ReactMarkdown>{currentMeeting.minutes}</ReactMarkdown>
           </div>
         ) : (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center">
+          <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%'}}>
+            <div style={{textAlign:'center'}}>
               {isGenerating ? (
                 <>
-                  <div className="w-8 h-8 border-2 border-white/10 border-t-purple-400 rounded-full animate-spin mx-auto mb-3" />
-                  <p className="text-white/30 text-sm">正在生成会议纪要...</p>
+                  <div style={{width:'32px',height:'32px',border:'2px solid rgba(255,255,255,0.1)',borderTop:'2px solid #a78bfa',borderRadius:'50%',animation:'spin 1s linear infinite',margin:'0 auto 12px'}} />
+                  <p style={{color:'rgba(255,255,255,0.3)',fontSize:'13px',margin:0}}>正在生成会议纪要...</p>
                 </>
               ) : (
-                <p className="text-white/20 text-sm">转录完成后将自动生成纪要</p>
+                <p style={{color:'rgba(255,255,255,0.2)',fontSize:'13px',margin:0}}>转录完成后将自动生成纪要</p>
               )}
             </div>
           </div>
         )}
 
+        {/* Chat History */}
         {currentMeeting.chatHistory.length > 0 && (
-          <div className="border-t border-white/[0.06] pt-4 space-y-3">
-            <div className="text-[10px] text-white/25 uppercase tracking-widest">对话</div>
+          <div style={{borderTop:'1px solid rgba(255,255,255,0.06)',paddingTop:'16px',marginTop:'16px'}}>
+            <div style={{fontSize:'10px',color:'rgba(255,255,255,0.25)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:'12px'}}>对话</div>
             {currentMeeting.chatHistory.map((msg, i) => (
-              <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm ${
-                  msg.role === 'user'
-                    ? 'bg-blue-500/20 text-blue-100 border border-blue-400/20'
-                    : 'bg-white/[0.04] text-white/60 border border-white/[0.06]'
-                }`}>
+              <div key={i} style={{display:'flex',justifyContent:msg.role === 'user' ? 'flex-end' : 'flex-start',marginBottom:'10px'}}>
+                <div style={{
+                  maxWidth:'85%',
+                  borderRadius:'14px',
+                  padding:'10px 14px',
+                  fontSize:'13px',
+                  ...(msg.role === 'user'
+                    ? {background:'rgba(96,165,250,0.15)',color:'#bfdbfe',border:'1px solid rgba(96,165,250,0.2)'}
+                    : {background:'rgba(255,255,255,0.04)',color:'rgba(255,255,255,0.6)',border:'1px solid rgba(255,255,255,0.06)'}
+                  )
+                }}>
                   {msg.role === 'assistant' ? (
                     <div className="prose prose-sm prose-invert max-w-none">
                       <ReactMarkdown>{msg.content}</ReactMarkdown>
@@ -86,28 +123,34 @@ export function MinutesPanel({ onChat }: MinutesPanelProps) {
         )}
       </div>
 
-      <div className="p-4 border-t border-white/[0.06]">
-        <div className="flex gap-2 items-end">
+      {/* Chat Input */}
+      <div style={{padding:'14px',borderTop:'1px solid rgba(255,255,255,0.06)'}}>
+        <div style={{display:'flex',gap:'8px',alignItems:'flex-end'}}>
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="输入修改要求，如：请把行动项按优先级排序..."
             rows={2}
-            className="flex-1 resize-none rounded-xl bg-white/[0.04] border border-white/[0.08] px-4 py-2.5 text-sm text-white/80 placeholder:text-white/20 focus:outline-none focus:border-blue-400/40 focus:bg-white/[0.06] transition-all"
+            style={{flex:1,resize:'none',borderRadius:'12px',background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.08)',padding:'10px 14px',fontSize:'13px',color:'rgba(255,255,255,0.8)',outline:'none',fontFamily:'inherit'}}
           />
           <button
             onClick={handleSend}
             disabled={!input.trim() || isGenerating}
-            className="p-2.5 bg-blue-500/20 text-blue-300 rounded-xl hover:bg-blue-500/30 disabled:opacity-30 disabled:hover:bg-blue-500/20 transition-all border border-blue-400/20"
+            style={{padding:'10px',background: input.trim() && !isGenerating ? 'rgba(96,165,250,0.2)' : 'rgba(255,255,255,0.04)',color: input.trim() && !isGenerating ? '#93c5fd' : 'rgba(255,255,255,0.2)',borderRadius:'12px',border:'1px solid rgba(96,165,250,0.2)',cursor: input.trim() && !isGenerating ? 'pointer' : 'default'}}
           >
-            <Send size={16} />
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
           </button>
         </div>
-        <p className="text-[10px] text-white/20 mt-2 ml-1">
+        <p style={{fontSize:'10px',color:'rgba(255,255,255,0.2)',margin:'6px 0 0 4px'}}>
           Shift+Enter 换行，Enter 发送
         </p>
       </div>
+
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg) } }
+        @keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.3 } }
+      `}</style>
     </div>
   )
 }

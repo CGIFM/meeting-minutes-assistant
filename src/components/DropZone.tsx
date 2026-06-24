@@ -1,5 +1,4 @@
 import { useCallback, useState } from 'react'
-import { Upload, FileAudio } from 'lucide-react'
 
 interface DropZoneProps {
   onFileDrop: (file: File) => void
@@ -41,31 +40,44 @@ export function DropZone({ onFileDrop }: DropZoneProps) {
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       onClick={handleClick}
-      className={`flex-1 flex items-center justify-center cursor-pointer transition-all duration-300 rounded-2xl m-4 ${
-        isDragging
-          ? 'bg-blue-500/10 border-2 border-dashed border-blue-400/50'
-          : 'border-2 border-dashed border-white/[0.06] hover:border-white/[0.12] hover:bg-white/[0.02]'
-      }`}
+      style={{
+        flex: 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: 'pointer',
+        margin: '16px',
+        borderRadius: '16px',
+        border: isDragging ? '2px dashed rgba(96,165,250,0.5)' : '2px dashed rgba(255,255,255,0.06)',
+        background: isDragging ? 'rgba(96,165,250,0.05)' : 'transparent',
+        transition: 'all 0.3s',
+      }}
     >
-      <div className="text-center">
-        <div className={`w-16 h-16 rounded-2xl mx-auto mb-5 flex items-center justify-center transition-all ${
-          isDragging ? 'bg-blue-500/20' : 'bg-white/[0.04]'
-        }`}>
-          {isDragging ? (
-            <FileAudio size={28} className="text-blue-400" />
-          ) : (
-            <Upload size={28} className="text-white/20" />
-          )}
+      <div style={{ textAlign: 'center' }}>
+        <div style={{
+          width: '64px', height: '64px', borderRadius: '16px', margin: '0 auto 20px',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: isDragging ? 'rgba(96,165,250,0.15)' : 'rgba(255,255,255,0.04)',
+        }}>
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={isDragging ? '#60a5fa' : 'rgba(255,255,255,0.2)'} strokeWidth="1.5">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
         </div>
-        <p className={`text-base font-medium mb-2 ${isDragging ? 'text-blue-300' : 'text-white/60'}`}>
+        <p style={{ fontSize: '15px', fontWeight: 500, color: isDragging ? '#93c5fd' : 'rgba(255,255,255,0.6)', margin: '0 0 8px' }}>
           {isDragging ? '松开即可开始处理' : '拖入音频文件'}
         </p>
-        <p className="text-xs text-white/25 leading-relaxed">
+        <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.25)', lineHeight: 1.8, margin: 0 }}>
           支持 MP3、WAV、M4A、MP4、FLAC、OGG 等格式<br />
           支持 60 分钟以上长录音
         </p>
-        <div className="mt-6">
-          <span className="px-4 py-2 rounded-lg bg-white/[0.05] border border-white/[0.08] text-xs text-white/40 hover:text-white/60 hover:bg-white/[0.08] transition-all">
+        <div style={{ marginTop: '24px' }}>
+          <span style={{
+            padding: '8px 16px', borderRadius: '8px',
+            background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)',
+            fontSize: '11px', color: 'rgba(255,255,255,0.4)',
+          }}>
             或点击选择文件
           </span>
         </div>
