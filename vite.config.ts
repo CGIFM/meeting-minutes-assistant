@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 
 function removeCrossOrigin() {
   return {
@@ -11,7 +12,7 @@ function removeCrossOrigin() {
 }
 
 export default defineConfig({
-  plugins: [react(), removeCrossOrigin()],
+  plugins: [react(), tailwindcss(), removeCrossOrigin()],
   base: './',
   build: {
     outDir: 'dist',

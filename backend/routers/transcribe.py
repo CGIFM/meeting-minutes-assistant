@@ -1,6 +1,5 @@
 import uuid
 import asyncio
-import tempfile
 import shutil
 from pathlib import Path
 from fastapi import APIRouter, UploadFile, File, WebSocket, WebSocketDisconnect
@@ -36,6 +35,7 @@ async def start_transcription(file: UploadFile = File(...)):
         "audio_path": str(original_path),
         "result": None,
         "error": None,
+        "segments_so_far": [],
     }
 
     asyncio.create_task(_run_transcription(job_id, str(original_path)))
@@ -54,12 +54,20 @@ async def get_transcription(job_id: str):
 @router.websocket("/ws/transcribe/{job_id}")
 async def ws_transcribe(websocket: WebSocket, job_id: str):
     await websocket.accept()
+    sent_segments = 0
     try:
         while True:
             job = _jobs.get(job_id)
             if not job:
                 await websocket.send_json({"type": "error", "message": "任务不存在"})
                 break
+
+            # 流式发送新识别的片段
+            current_segments = job.get("segments_so_far", [])
+            if len(current_segments) > sent_segments:
+                for seg in current_segments[sent_segments:]:
+                    await websocket.send_json({"type": "segment", "segment": seg})
+                sent_segments = len(current_segments)
 
             if job["status"] == "processing":
                 await websocket.send_json({"type": "progress", "progress": job["progress"]})
@@ -70,7 +78,7 @@ async def ws_transcribe(websocket: WebSocket, job_id: str):
                 await websocket.send_json({"type": "error", "message": job["error"]})
                 break
 
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.3)
     except WebSocketDisconnect:
         pass
 
@@ -88,10 +96,17 @@ async def _run_transcription(job_id: str, audio_path: str):
         duration = await asyncio.to_thread(get_audio_duration, audio_path)
 
         hotwords = await get_setting("hotwords", "")
+        hotwords_str = " ".join(hotwords.split("\n")) if hotwords else ""
+
         engine = get_engine()
 
         job["progress"] = 0.4
-        result = await asyncio.to_thread(engine.transcribe, wav_path, hotwords)
+
+        def on_segment(segment, idx, total):
+            job["segments_so_far"].append(segment)
+            job["progress"] = 0.4 + 0.55 * ((idx + 1) / total)
+
+        result = await asyncio.to_thread(engine.transcribe, wav_path, hotwords_str, on_segment)
 
         job["status"] = "completed"
         job["progress"] = 1.0

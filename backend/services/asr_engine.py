@@ -1,5 +1,5 @@
 import logging
-from typing import Optional
+from typing import Optional, Callable
 from funasr import AutoModel
 from funasr.utils.postprocess_utils import rich_transcription_postprocess
 
@@ -32,7 +32,7 @@ class ASREngine:
             else:
                 raise
 
-    def transcribe(self, audio_path: str, hotwords: str = "") -> dict:
+    def transcribe(self, audio_path: str, hotwords: str = "", on_segment=None) -> dict:
         if not self.loaded:
             self.load()
 
@@ -44,9 +44,9 @@ class ASREngine:
             merge_length_s=15,
         )
 
-        return self._format_result(result)
+        return self._format_result(result, on_segment)
 
-    def _format_result(self, result) -> dict:
+    def _format_result(self, result, on_segment=None) -> dict:
         if not result or not result[0]:
             return {"segments": [], "full_text": ""}
 
@@ -55,28 +55,36 @@ class ASREngine:
 
         item = result[0]
         if "sentence_info" in item:
-            for seg in item["sentence_info"]:
+            for idx, seg in enumerate(item["sentence_info"]):
                 start_ms = seg.get("start", 0)
                 end_ms = seg.get("end", 0)
                 speaker = seg.get("spk", 0)
                 text = rich_transcription_postprocess(seg.get("sentence", ""))
 
-                segments.append({
+                segment = {
                     "start": start_ms / 1000,
                     "end": end_ms / 1000,
                     "speaker": f"说话人{speaker + 1}",
                     "text": text,
-                })
+                }
+                segments.append(segment)
                 full_text_parts.append(f"[{self._format_time(start_ms)}] 说话人{speaker + 1}: {text}")
+
+                if on_segment:
+                    on_segment(segment, idx, len(item["sentence_info"]))
         else:
             text = rich_transcription_postprocess(item.get("text", ""))
-            segments.append({
+            segment = {
                 "start": 0,
                 "end": 0,
                 "speaker": "说话人1",
                 "text": text,
-            })
+            }
+            segments.append(segment)
             full_text_parts.append(text)
+
+            if on_segment:
+                on_segment(segment, 0, 1)
 
         return {
             "segments": segments,

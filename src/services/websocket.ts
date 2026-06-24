@@ -17,8 +17,9 @@ export class ChatWebSocket {
       this.onMessage(data)
     }
     this.ws.onerror = (e) => console.error('WebSocket error:', e)
-    return new Promise<void>((resolve) => {
+    return new Promise<void>((resolve, reject) => {
       this.ws!.onopen = () => resolve()
+      this.ws!.onerror = () => reject(new Error('WebSocket connection failed'))
     })
   }
 
@@ -37,6 +38,7 @@ export function connectTranscribeWS(
   port: number,
   jobId: string,
   onProgress: (p: number) => void,
+  onSegment: (segment: any) => void,
   onComplete: (result: any) => void,
   onError: (msg: string) => void,
 ) {
@@ -44,6 +46,7 @@ export function connectTranscribeWS(
   ws.onmessage = (event) => {
     const data = JSON.parse(event.data)
     if (data.type === 'progress') onProgress(data.progress)
+    else if (data.type === 'segment') onSegment(data.segment)
     else if (data.type === 'complete') { onComplete(data.result); ws.close() }
     else if (data.type === 'error') { onError(data.message); ws.close() }
   }

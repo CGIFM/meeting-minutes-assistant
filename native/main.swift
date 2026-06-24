@@ -2,7 +2,7 @@ import Cocoa
 import WebKit
 import Foundation
 
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     var window: NSWindow!
     var webView: WKWebView!
     var backendProcess: Process?
@@ -21,9 +21,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
         config.userContentController.addUserScript(userScript)
 
-        webView = WKWebView(frame: .zero, configuration: config)
-        webView.setValue(false, forKey: "drawsBackground")
-
         let windowRect = NSRect(x: 0, y: 0, width: 1400, height: 900)
         window = NSWindow(
             contentRect: windowRect,
@@ -35,7 +32,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.titleVisibility = .hidden
         window.backgroundColor = NSColor(red: 0.06, green: 0.06, blue: 0.07, alpha: 1)
         window.minSize = NSSize(width: 1000, height: 700)
-        window.contentView = webView
+
+        webView = WKWebView(frame: window.contentView!.bounds, configuration: config)
+        webView.navigationDelegate = self
+        webView.autoresizingMask = [.width, .height]
+        webView.setValue(false, forKey: "drawsBackground")
+        window.contentView!.addSubview(webView)
+
         window.center()
         window.makeKeyAndOrderFront(nil)
 
@@ -48,6 +51,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return true
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        print("Navigation failed: \(error.localizedDescription)")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            self.loadUI()
+        }
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        print("Provisional navigation failed: \(error.localizedDescription)")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            self.loadUI()
+        }
     }
 
     private func startBackend() {
@@ -80,18 +97,43 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        Thread.sleep(forTimeInterval: 2.0)
-        let data = pipe.fileHandleForReading.availableData
-        if let output = String(data: data, encoding: .utf8),
-           let range = output.range(of: "PORT=") {
-            let portStr = output[range.upperBound...].prefix(while: { $0.isNumber })
-            backendPort = Int(portStr) ?? 0
+        // 循环等待端口（最多 10 秒）
+        let startTime = Date()
+        while backendPort == 0 && Date().timeIntervalSince(startTime) < 10.0 {
+            Thread.sleep(forTimeInterval: 0.3)
+            let data = pipe.fileHandleForReading.availableData
+            if let output = String(data: data, encoding: .utf8),
+               let range = output.range(of: "PORT=") {
+                let portStr = output[range.upperBound...].prefix(while: { $0.isNumber })
+                backendPort = Int(portStr) ?? 0
+            }
         }
 
         if backendPort > 0 {
             print("Backend started on port \(backendPort)")
+            // 等待服务完全就绪
+            waitForBackend()
         } else {
             print("WARNING: Could not determine backend port")
+        }
+    }
+
+    private func waitForBackend() {
+        let url = URL(string: "http://127.0.0.1:\(backendPort)/api/settings")!
+        let startTime = Date()
+        while Date().timeIntervalSince(startTime) < 5.0 {
+            let semaphore = DispatchSemaphore(value: 0)
+            var success = false
+            let task = URLSession.shared.dataTask(with: url) { data, response, error in
+                if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                    success = true
+                }
+                semaphore.signal()
+            }
+            task.resume()
+            semaphore.wait()
+            if success { return }
+            Thread.sleep(forTimeInterval: 0.3)
         }
     }
 
@@ -102,8 +144,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func findBackendDir() -> String {
         let homePath = NSHomeDirectory()
-        let projectBackend = homePath + "/Projects/meeting-minutes-assistant/backend"
-        return projectBackend
+        return homePath + "/Projects/meeting-minutes-assistant/backend"
     }
 
     private func loadUI() {
@@ -117,7 +158,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             <div style="text-align:center;">
                 <h2 style="font-weight:500;">会议纪要助手</h2>
                 <p style="color:#666;font-size:14px;">后端启动失败，请检查 Python 环境</p>
-                <p style="color:#444;font-size:12px;margin-top:12px;">cd ~/Projects/meeting-minutes-assistant/backend<br>source .venv/bin/activate && python main.py</p>
             </div>
             </body>
             </html>

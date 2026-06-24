@@ -13,7 +13,7 @@ export default function App() {
   const store = useAppStore()
   const [chatWs, setChatWs] = useState<ChatWebSocket | null>(null)
 
-  const port = store.backendPort || 58886
+  const port = store.backendPort || (window as any).__BACKEND_PORT__ || 0
 
   const handleFileDrop = useCallback(async (file: File) => {
     store.setTranscribing(true)
@@ -38,6 +38,15 @@ export default function App() {
         port,
         job_id,
         (progress) => store.setTranscribeProgress(progress),
+        (segment) => {
+          // 流式追加片段
+          const meeting = store.currentMeeting
+          if (meeting) {
+            store.updateMeeting(job_id, {
+              segments: [...(meeting.segments || []), segment],
+            })
+          }
+        },
         (result) => {
           store.setTranscribing(false)
           store.setTranscribeProgress(1)
@@ -63,8 +72,9 @@ export default function App() {
 
     const ws = new ChatWebSocket(port, (data) => {
       if (data.type === 'chunk') {
+        const meeting = store.currentMeeting
         store.updateMeeting(meetingId, {
-          minutes: (store.currentMeeting?.minutes || '') + data.content,
+          minutes: (meeting?.minutes || '') + data.content,
         })
       } else if (data.type === 'done') {
         store.setGenerating(false)
@@ -131,11 +141,11 @@ export default function App() {
   }, [chatWs, port, store])
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden bg-[#0f0f12]">
-      <div className="flex flex-1 overflow-hidden">
+    <div style={{width:'100%',height:'100%',display:'flex',flexDirection:'column',overflow:'hidden',background:'#0f0f12'}}>
+      <div style={{display:'flex',flex:1,overflow:'hidden'}}>
         <Sidebar onFileDrop={handleFileDrop} />
 
-        <main className="flex-1 flex overflow-hidden rounded-tl-2xl bg-[#1a1a22] m-0">
+        <main style={{flex:1,display:'flex',overflow:'hidden',borderTopLeftRadius:'16px',background:'#1a1a22'}}>
           {store.currentMeeting ? (
             <>
               <TranscriptPanel />
