@@ -1,11 +1,58 @@
 import json
+import os
+import sqlite3
+from pathlib import Path
 from fastapi import APIRouter
 from pydantic import BaseModel
 from typing import Optional
+import httpx
 from db.database import get_db, get_setting, set_setting
 from services.prompt_templates import DEFAULT_MEETING_MINUTES_PROMPT
 
 router = APIRouter()
+
+
+def find_cc_switch_config() -> dict:
+    """从 CC switch 数据库读取当前激活的 Claude provider 配置"""
+    home = Path.home()
+    db_path = home / ".cc-switch" / "cc-switch.db"
+    if not db_path.exists():
+        return {}
+
+    try:
+        conn = sqlite3.connect(str(db_path))
+        cur = conn.cursor()
+        # 优先取 claude 应用类型里 is_current=1 的
+        cur.execute(
+            "SELECT settings_config FROM providers WHERE app_type='claude' AND is_current=1 LIMIT 1"
+        )
+        row = cur.fetchone()
+        if not row:
+            cur.execute(
+                "SELECT settings_config FROM providers WHERE app_type='claude' ORDER BY created_at DESC LIMIT 1"
+            )
+            row = cur.fetchone()
+        conn.close()
+
+        if row and row[0]:
+            config = json.loads(row[0])
+            env = config.get("env", {}) or {}
+            token = env.get("ANTHROPIC_AUTH_TOKEN", "") or env.get("ANTHROPIC_API_KEY", "")
+            base_url = env.get("ANTHROPIC_BASE_URL", "")
+            if token and token != "PROXY_MANAGED":
+                return {"api_key": token, "base_url": base_url}
+    except Exception:
+        pass
+    return {}
+
+
+def find_claude_code_api_key() -> str:
+    """从环境变量或 CC switch 读取 API Key"""
+    env_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
+    if env_key and env_key != "PROXY_MANAGED":
+        return env_key
+    cc = find_cc_switch_config()
+    return cc.get("api_key", "")
 
 
 class SettingsUpdate(BaseModel):
@@ -18,6 +65,13 @@ class SettingsUpdate(BaseModel):
 class APIKeyUpdate(BaseModel):
     provider: str
     api_key: str
+    base_url: Optional[str] = ""
+
+
+class TestConnectionRequest(BaseModel):
+    provider: str
+    api_key: str = ""
+    base_url: str = ""
 
 
 @router.get("/settings")
@@ -46,6 +100,8 @@ async def update_settings(data: SettingsUpdate):
 @router.put("/settings/apikey")
 async def update_apikey(data: APIKeyUpdate):
     await set_setting(f"apikey_{data.provider}", data.api_key)
+    if data.base_url:
+        await set_setting(f"baseurl_{data.provider}", data.base_url)
     return {"status": "ok"}
 
 
@@ -55,8 +111,142 @@ async def get_apikeys():
     result = {}
     for p in providers:
         key = await get_setting(f"apikey_{p}", "")
-        result[p] = "***" + key[-4:] if len(key) > 4 else ("已配置" if key else "")
+        base_url = await get_setting(f"baseurl_{p}", "")
+        result[p] = {
+            "configured": "***" + key[-4:] if len(key) > 4 else ("已配置" if key else ""),
+            "base_url": base_url,
+        }
+    cc = find_cc_switch_config()
+    result["claude_code_available"] = bool(cc.get("api_key"))
+    result["claude_code_base_url"] = cc.get("base_url", "")
     return result
+
+
+@router.post("/settings/import-claude-code-key")
+async def import_claude_code_key():
+    """从 CC switch 导入当前激活的 Claude 配置"""
+    cc = find_cc_switch_config()
+    if cc.get("api_key"):
+        await set_setting("apikey_claude", cc["api_key"])
+        if cc.get("base_url"):
+            await set_setting("baseurl_claude", cc["base_url"])
+        msg = "已导入 CC switch 的 Claude API Key"
+        if cc.get("base_url"):
+            msg += f"（地址: {cc['base_url']}）"
+        return {"success": True, "message": msg, "base_url": cc.get("base_url", "")}
+    return {"success": False, "message": "未检测到 CC switch 的 Claude 配置"}
+
+
+@router.post("/settings/test-connection")
+async def test_connection(data: TestConnectionRequest):
+    """测试 LLM 连接是否正常"""
+    api_key = data.api_key or await get_setting(f"apikey_{data.provider}", "")
+    base_url = data.base_url or await get_setting(f"baseurl_{data.provider}", "")
+
+    if not api_key and data.provider != "ollama":
+        return {"success": False, "message": "未配置 API Key"}
+
+    try:
+        if data.provider == "claude":
+            url = (base_url or "https://api.anthropic.com").rstrip("/") + "/v1/messages"
+            headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"}
+            body = {"model": "claude-sonnet-4-20250514", "max_tokens": 1, "messages": [{"role": "user", "content": "hi"}]}
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.post(url, json=body, headers=headers)
+                if resp.status_code in (200, 201):
+                    return {"success": True, "message": "连接成功"}
+                elif resp.status_code == 401:
+                    return {"success": False, "message": "API Key 无效"}
+                else:
+                    return {"success": False, "message": f"HTTP {resp.status_code}"}
+
+        elif data.provider == "openai":
+            url = (base_url or "https://api.openai.com/v1") + "/models"
+            headers = {"Authorization": f"Bearer {api_key}"}
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(url, headers=headers)
+                if resp.status_code == 200:
+                    return {"success": True, "message": "连接成功"}
+                elif resp.status_code == 401:
+                    return {"success": False, "message": "API Key 无效"}
+                else:
+                    return {"success": False, "message": f"HTTP {resp.status_code}"}
+
+        elif data.provider == "gemini":
+            url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(url)
+                if resp.status_code == 200:
+                    return {"success": True, "message": "连接成功"}
+                else:
+                    return {"success": False, "message": f"HTTP {resp.status_code}"}
+
+        elif data.provider == "ollama":
+            url = (base_url or "http://localhost:11434") + "/api/tags"
+            async with httpx.AsyncClient(timeout=5) as client:
+                resp = await client.get(url)
+                if resp.status_code == 200:
+                    return {"success": True, "message": "连接成功"}
+                else:
+                    return {"success": False, "message": f"HTTP {resp.status_code}"}
+
+    except httpx.ConnectError:
+        return {"success": False, "message": "无法连接到服务"}
+    except httpx.TimeoutException:
+        return {"success": False, "message": "连接超时"}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@router.post("/settings/list-models")
+async def list_models(data: TestConnectionRequest):
+    """获取可用模型列表"""
+    api_key = data.api_key or await get_setting(f"apikey_{data.provider}", "")
+    base_url = data.base_url or await get_setting(f"baseurl_{data.provider}", "")
+
+    try:
+        if data.provider == "claude":
+            return {"models": [
+                "claude-sonnet-4-20250514",
+                "claude-opus-4-20250514",
+                "claude-haiku-4-5-20251001",
+                "claude-3-5-sonnet-20241022",
+            ]}
+
+        elif data.provider == "openai":
+            url = (base_url or "https://api.openai.com/v1") + "/models"
+            headers = {"Authorization": f"Bearer {api_key}"}
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(url, headers=headers)
+                if resp.status_code == 200:
+                    data_resp = resp.json()
+                    models = sorted([m["id"] for m in data_resp.get("data", [])])
+                    chat_models = [m for m in models if any(k in m for k in ["gpt", "o1", "o3", "chatgpt"])]
+                    return {"models": chat_models[:20] if chat_models else models[:20]}
+                return {"models": []}
+
+        elif data.provider == "gemini":
+            url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(url)
+                if resp.status_code == 200:
+                    data_resp = resp.json()
+                    models = [m["name"].replace("models/", "") for m in data_resp.get("models", []) if "generateContent" in str(m.get("supportedGenerationMethods", []))]
+                    return {"models": models[:20]}
+                return {"models": []}
+
+        elif data.provider == "ollama":
+            url = (base_url or "http://localhost:11434") + "/api/tags"
+            async with httpx.AsyncClient(timeout=5) as client:
+                resp = await client.get(url)
+                if resp.status_code == 200:
+                    data_resp = resp.json()
+                    models = [m["name"] for m in data_resp.get("models", [])]
+                    return {"models": models}
+                return {"models": []}
+
+    except Exception:
+        return {"models": []}
 
 
 @router.get("/meetings")

@@ -6,12 +6,15 @@ import { TranscriptPanel } from './components/TranscriptPanel'
 import { MinutesPanel } from './components/MinutesPanel'
 import { ProgressBar } from './components/ProgressBar'
 import { SettingsModal } from './components/SettingsModal'
+import { GenerateDialog } from './components/GenerateDialog'
 import { uploadAudio } from './services/api'
 import { connectTranscribeWS, ChatWebSocket } from './services/websocket'
 
 export default function App() {
   const store = useAppStore()
   const [chatWs, setChatWs] = useState<ChatWebSocket | null>(null)
+  const [showGenerateDialog, setShowGenerateDialog] = useState(false)
+  const [pendingMeetingId, setPendingMeetingId] = useState('')
 
   const port = store.backendPort || (window as any).__BACKEND_PORT__ || 0
 
@@ -39,7 +42,6 @@ export default function App() {
         job_id,
         (progress) => store.setTranscribeProgress(progress),
         (segment) => {
-          // 流式追加片段
           const meeting = store.currentMeeting
           if (meeting) {
             store.updateMeeting(job_id, {
@@ -54,7 +56,9 @@ export default function App() {
             transcript: result.full_text,
             segments: result.segments,
           })
-          handleAutoSummarize(job_id, result.full_text)
+          // 转录完成后弹出确认对话框
+          setPendingMeetingId(job_id)
+          setShowGenerateDialog(true)
         },
         (error) => {
           store.setTranscribing(false)
@@ -67,21 +71,25 @@ export default function App() {
     }
   }, [port, store])
 
-  const handleAutoSummarize = useCallback(async (meetingId: string, transcript: string) => {
+  const handleGenerate = useCallback(async (options: { provider: string; model: string; customPrompt: string }) => {
+    setShowGenerateDialog(false)
+    const meeting = store.meetings.find(m => m.id === pendingMeetingId) || store.currentMeeting
+    if (!meeting?.transcript) return
+
     store.setGenerating(true)
 
     const ws = new ChatWebSocket(port, (data) => {
       if (data.type === 'chunk') {
-        const meeting = store.currentMeeting
-        store.updateMeeting(meetingId, {
-          minutes: (meeting?.minutes || '') + data.content,
+        const currentMeeting = store.currentMeeting
+        store.updateMeeting(pendingMeetingId, {
+          minutes: (currentMeeting?.minutes || '') + data.content,
         })
       } else if (data.type === 'done') {
         store.setGenerating(false)
-        store.updateMeeting(meetingId, { minutes: data.full_content })
+        store.updateMeeting(pendingMeetingId, { minutes: data.full_content })
       } else if (data.type === 'error') {
         store.setGenerating(false)
-        console.error('LLM 错误:', data.message)
+        alert(`生成失败: ${data.message}`)
       }
     })
 
@@ -90,12 +98,13 @@ export default function App() {
 
     ws.send({
       action: 'summarize',
-      meeting_id: meetingId,
-      transcript,
-      provider: store.settings.default_provider,
-      model: store.settings.default_model,
+      meeting_id: pendingMeetingId,
+      transcript: meeting.transcript,
+      provider: options.provider,
+      model: options.model,
+      custom_prompt: options.customPrompt,
     })
-  }, [port, store])
+  }, [pendingMeetingId, port, store])
 
   const handleChat = useCallback((message: string) => {
     if (!store.currentMeeting) return
@@ -140,13 +149,15 @@ export default function App() {
     })
   }, [chatWs, port, store])
 
+  const currentMeeting = store.currentMeeting
+
   return (
     <div style={{width:'100%',height:'100%',display:'flex',flexDirection:'column',overflow:'hidden',background:'#0f0f12'}}>
       <div style={{display:'flex',flex:1,overflow:'hidden'}}>
         <Sidebar onFileDrop={handleFileDrop} />
 
         <main style={{flex:1,display:'flex',overflow:'hidden',borderTopLeftRadius:'16px',background:'#1a1a22'}}>
-          {store.currentMeeting ? (
+          {currentMeeting ? (
             <>
               <TranscriptPanel />
               <MinutesPanel onChat={handleChat} />
@@ -158,6 +169,16 @@ export default function App() {
       </div>
 
       {(store.isTranscribing || store.isGenerating) && <ProgressBar />}
+
+      {showGenerateDialog && currentMeeting && (
+        <GenerateDialog
+          transcript={currentMeeting.transcript}
+          meetingId={currentMeeting.id}
+          onConfirm={handleGenerate}
+          onCancel={() => setShowGenerateDialog(false)}
+        />
+      )}
+
       {store.showSettings && <SettingsModal />}
     </div>
   )

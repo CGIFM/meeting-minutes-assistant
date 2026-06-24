@@ -3,21 +3,29 @@ import { useAppStore } from '../stores/appStore'
 import { getSettings, updateSettings, updateApiKey, getApiKeys } from '../services/api'
 
 const PROVIDERS = [
-  { id: 'claude', name: 'Claude (Anthropic)', placeholder: 'sk-ant-...' },
-  { id: 'openai', name: 'OpenAI / 兼容API', placeholder: 'sk-...' },
-  { id: 'gemini', name: 'Google Gemini', placeholder: 'AIza...' },
-  { id: 'ollama', name: 'Ollama (本地)', placeholder: '无需 Key' },
+  { id: 'claude', name: 'Claude (Anthropic)', placeholder: 'sk-ant-...', hasBaseUrl: false },
+  { id: 'openai', name: 'OpenAI / 兼容API', placeholder: 'sk-...', hasBaseUrl: true },
+  { id: 'gemini', name: 'Google Gemini', placeholder: 'AIza...', hasBaseUrl: false },
+  { id: 'ollama', name: 'Ollama (本地)', placeholder: '无需 Key', hasBaseUrl: true },
 ]
+
+const BASE_URL = () => `http://127.0.0.1:${(window as any).__BACKEND_PORT__ || 0}`
 
 export function SettingsModal() {
   const { setShowSettings, settings, setSettings } = useAppStore()
   const [tab, setTab] = useState<'llm' | 'asr' | 'prompt'>('llm')
-  const [apiKeys, setApiKeys] = useState<Record<string, string>>({})
+  const [apiKeys, setApiKeys] = useState<Record<string, any>>({})
   const [keyInputs, setKeyInputs] = useState<Record<string, string>>({})
+  const [baseUrlInputs, setBaseUrlInputs] = useState<Record<string, string>>({})
   const [hotwords, setHotwords] = useState(settings.hotwords)
   const [provider, setProvider] = useState(settings.default_provider)
   const [model, setModel] = useState(settings.default_model)
   const [prompt, setPrompt] = useState(settings.prompt_template)
+  const [testResults, setTestResults] = useState<Record<string, { success: boolean; message: string }>>({})
+  const [modelLists, setModelLists] = useState<Record<string, string[]>>({})
+  const [testing, setTesting] = useState<string>('')
+  const [loadingModels, setLoadingModels] = useState<string>('')
+  const [ccAvailable, setCcAvailable] = useState(false)
 
   useEffect(() => { loadSettings() }, [])
 
@@ -31,16 +39,73 @@ export function SettingsModal() {
       setSettings(s)
       const keys = await getApiKeys()
       setApiKeys(keys)
+      setCcAvailable(keys.claude_code_available || false)
+      const urls: Record<string, string> = {}
+      Object.entries(keys).forEach(([k, v]: [string, any]) => { if (v && v.base_url) urls[k] = v.base_url })
+      setBaseUrlInputs(urls)
+    } catch (e) {}
+  }
+
+  const handleImportClaudeCode = async () => {
+    try {
+      const resp = await fetch(`${BASE_URL()}/api/settings/import-claude-code-key`, { method: 'POST' })
+      const result = await resp.json()
+      if (result.success) {
+        const keys = await getApiKeys()
+        setApiKeys(keys)
+      } else {
+        alert(result.message)
+      }
     } catch (e) {}
   }
 
   const handleSaveKey = async (providerId: string) => {
-    const key = keyInputs[providerId]
-    if (!key) return
-    await updateApiKey(providerId, key)
+    const key = keyInputs[providerId] || ''
+    const base_url = baseUrlInputs[providerId] || ''
+    await updateApiKey(providerId, key, base_url)
     setKeyInputs({ ...keyInputs, [providerId]: '' })
     const keys = await getApiKeys()
     setApiKeys(keys)
+  }
+
+  const handleTestConnection = async (providerId: string) => {
+    setTesting(providerId)
+    try {
+      const resp = await fetch(`${BASE_URL()}/api/settings/test-connection`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: providerId,
+          api_key: keyInputs[providerId] || '',
+          base_url: baseUrlInputs[providerId] || '',
+        }),
+      })
+      const result = await resp.json()
+      setTestResults({ ...testResults, [providerId]: result })
+    } catch (e) {
+      setTestResults({ ...testResults, [providerId]: { success: false, message: '请求失败' } })
+    }
+    setTesting('')
+  }
+
+  const handleLoadModels = async (providerId: string) => {
+    setLoadingModels(providerId)
+    try {
+      const resp = await fetch(`${BASE_URL()}/api/settings/list-models`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: providerId,
+          api_key: keyInputs[providerId] || '',
+          base_url: baseUrlInputs[providerId] || '',
+        }),
+      })
+      const result = await resp.json()
+      setModelLists({ ...modelLists, [providerId]: result.models || [] })
+    } catch (e) {
+      setModelLists({ ...modelLists, [providerId]: [] })
+    }
+    setLoadingModels('')
   }
 
   const handleSave = async () => {
@@ -55,9 +120,14 @@ export function SettingsModal() {
     outline:'none',fontFamily:'inherit',boxSizing:'border-box'
   }
 
+  const btnSmall: React.CSSProperties = {
+    padding:'6px 12px',background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.08)',
+    borderRadius:'8px',color:'rgba(255,255,255,0.6)',fontSize:'10px',cursor:'pointer',whiteSpace:'nowrap'
+  }
+
   return (
     <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',backdropFilter:'blur(4px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:999}}>
-      <div style={{background:'#1a1a22',border:'1px solid rgba(255,255,255,0.08)',borderRadius:'16px',width:'580px',maxHeight:'75vh',display:'flex',flexDirection:'column',boxShadow:'0 25px 50px rgba(0,0,0,0.5)'}}>
+      <div style={{background:'#1a1a22',border:'1px solid rgba(255,255,255,0.08)',borderRadius:'16px',width:'620px',maxHeight:'80vh',display:'flex',flexDirection:'column',boxShadow:'0 25px 50px rgba(0,0,0,0.5)'}}>
         {/* Header */}
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'20px 24px',borderBottom:'1px solid rgba(255,255,255,0.06)'}}>
           <h2 style={{fontSize:'15px',fontWeight:600,color:'rgba(255,255,255,0.9)',margin:0}}>设置</h2>
@@ -80,24 +150,88 @@ export function SettingsModal() {
           {tab === 'llm' && (
             <div>
               <label style={{display:'block',fontSize:'11px',color:'rgba(255,255,255,0.5)',marginBottom:'6px'}}>默认提供商</label>
-              <select value={provider} onChange={(e) => setProvider(e.target.value)} style={{...inputStyle,appearance:'auto'}}>
+              <select value={provider} onChange={(e) => { setProvider(e.target.value); handleLoadModels(e.target.value) }} style={{...inputStyle,appearance:'auto'}}>
                 {PROVIDERS.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
 
-              <label style={{display:'block',fontSize:'11px',color:'rgba(255,255,255,0.5)',margin:'16px 0 6px'}}>默认模型（可选）</label>
-              <input type="text" value={model} onChange={(e) => setModel(e.target.value)} placeholder="留空使用默认模型" style={inputStyle} />
+              <label style={{display:'block',fontSize:'11px',color:'rgba(255,255,255,0.5)',margin:'16px 0 6px'}}>默认模型</label>
+              {modelLists[provider]?.length ? (
+                <select value={model} onChange={(e) => setModel(e.target.value)} style={{...inputStyle,appearance:'auto'}}>
+                  <option value="">自动（使用默认模型）</option>
+                  {modelLists[provider].map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+              ) : (
+                <div style={{display:'flex',gap:'8px'}}>
+                  <input type="text" value={model} onChange={(e) => setModel(e.target.value)} placeholder="留空使用默认模型" style={{...inputStyle,flex:1}} />
+                  <button onClick={() => handleLoadModels(provider)} style={btnSmall}>
+                    {loadingModels === provider ? '...' : '获取模型'}
+                  </button>
+                </div>
+              )}
+              {modelLists[provider]?.length > 0 && (
+                <p style={{fontSize:'10px',color:'rgba(255,255,255,0.25)',margin:'4px 0 0'}}>
+                  已获取 {modelLists[provider].length} 个模型
+                </p>
+              )}
 
               <div style={{borderTop:'1px solid rgba(255,255,255,0.06)',marginTop:'20px',paddingTop:'16px'}}>
-                <h3 style={{fontSize:'11px',color:'rgba(255,255,255,0.5)',margin:'0 0 12px'}}>API Keys</h3>
-                {PROVIDERS.filter(p => p.id !== 'ollama').map(p => (
-                  <div key={p.id} style={{marginBottom:'14px'}}>
-                    <label style={{display:'block',fontSize:'10px',color:'rgba(255,255,255,0.3)',marginBottom:'4px'}}>
-                      {p.name} {apiKeys[p.id] && <span style={{color:'#34d399'}}>{apiKeys[p.id]}</span>}
-                    </label>
-                    <div style={{display:'flex',gap:'8px'}}>
-                      <input type="password" value={keyInputs[p.id]||''} onChange={(e) => setKeyInputs({...keyInputs,[p.id]:e.target.value})} placeholder={p.placeholder} style={{...inputStyle,flex:1}} />
-                      <button onClick={() => handleSaveKey(p.id)} style={{padding:'8px 14px',background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:'8px',color:'rgba(255,255,255,0.6)',fontSize:'11px',cursor:'pointer'}}>保存</button>
+                <h3 style={{fontSize:'11px',color:'rgba(255,255,255,0.5)',margin:'0 0 12px'}}>API 配置</h3>
+                {PROVIDERS.map(p => (
+                  <div key={p.id} style={{marginBottom:'18px',padding:'12px',background:'rgba(255,255,255,0.02)',borderRadius:'10px',border:'1px solid rgba(255,255,255,0.04)'}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}}>
+                      <label style={{fontSize:'11px',color:'rgba(255,255,255,0.6)',fontWeight:500}}>{p.name}</label>
+                      <div style={{display:'flex',gap:'6px',alignItems:'center'}}>
+                        {apiKeys[p.id]?.configured && (
+                          <span style={{fontSize:'9px',color:'#34d399',background:'rgba(52,211,153,0.1)',padding:'2px 6px',borderRadius:'4px'}}>
+                            {apiKeys[p.id].configured}
+                          </span>
+                        )}
+                        {p.id === 'claude' && ccAvailable && (
+                          <button onClick={handleImportClaudeCode} style={{...btnSmall,color:'#93c5fd',borderColor:'rgba(96,165,250,0.3)'}}>
+                            导入 Claude Code Key
+                          </button>
+                        )}
+                      </div>
                     </div>
+
+                    {p.id !== 'ollama' && (
+                      <div style={{display:'flex',gap:'6px',marginBottom:'6px'}}>
+                        <input type="password" value={keyInputs[p.id]||''} onChange={(e) => setKeyInputs({...keyInputs,[p.id]:e.target.value})} placeholder={p.placeholder} style={{...inputStyle,flex:1,padding:'8px 12px'}} />
+                      </div>
+                    )}
+
+                    {p.hasBaseUrl && (
+                      <div style={{marginBottom:'6px'}}>
+                        <input
+                          type="text"
+                          value={baseUrlInputs[p.id]||''}
+                          onChange={(e) => setBaseUrlInputs({...baseUrlInputs,[p.id]:e.target.value})}
+                          placeholder={p.id === 'ollama' ? 'http://localhost:11434' : 'https://api.openai.com/v1（自定义地址）'}
+                          style={{...inputStyle,padding:'8px 12px',fontSize:'11px'}}
+                        />
+                      </div>
+                    )}
+
+                    <div style={{display:'flex',gap:'6px'}}>
+                      <button onClick={() => handleSaveKey(p.id)} style={btnSmall}>保存</button>
+                      <button onClick={() => handleTestConnection(p.id)} style={btnSmall}>
+                        {testing === p.id ? '测试中...' : '测试连接'}
+                      </button>
+                      <button onClick={() => handleLoadModels(p.id)} style={btnSmall}>
+                        {loadingModels === p.id ? '...' : '获取模型'}
+                      </button>
+                      {testResults[p.id] && (
+                        <span style={{fontSize:'10px',alignSelf:'center',color:testResults[p.id].success ? '#34d399' : '#f87171'}}>
+                          {testResults[p.id].message}
+                        </span>
+                      )}
+                    </div>
+
+                    {modelLists[p.id]?.length > 0 && (
+                      <div style={{marginTop:'8px',fontSize:'10px',color:'rgba(255,255,255,0.3)',maxHeight:'60px',overflowY:'auto'}}>
+                        可用模型: {modelLists[p.id].slice(0,5).join(', ')}{modelLists[p.id].length > 5 ? ` 等${modelLists[p.id].length}个` : ''}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

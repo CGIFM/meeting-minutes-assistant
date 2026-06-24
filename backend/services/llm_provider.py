@@ -16,9 +16,9 @@ class LLMProvider(ABC):
 
 
 class ClaudeProvider(LLMProvider):
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, base_url: str = ""):
         self.api_key = api_key
-        self.base_url = "https://api.anthropic.com/v1/messages"
+        self.base_url = (base_url or "https://api.anthropic.com").rstrip("/")
 
     def default_model(self) -> str:
         return "claude-sonnet-4-20250514"
@@ -50,7 +50,7 @@ class ClaudeProvider(LLMProvider):
         }
 
         async with httpx.AsyncClient(timeout=120) as client:
-            async with client.stream("POST", self.base_url, json=body, headers=headers) as resp:
+            async with client.stream("POST", f"{self.base_url}/v1/messages", json=body, headers=headers) as resp:
                 async for line in resp.aiter_lines():
                     if line.startswith("data: "):
                         data = line[6:]

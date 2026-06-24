@@ -29,11 +29,11 @@ export async function updateSettings(data: any) {
   })
 }
 
-export async function updateApiKey(provider: string, api_key: string) {
+export async function updateApiKey(provider: string, api_key: string, base_url: string = '') {
   await fetch(`${BASE_URL()}/api/settings/apikey`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ provider, api_key }),
+    body: JSON.stringify({ provider, api_key, base_url }),
   })
 }
 

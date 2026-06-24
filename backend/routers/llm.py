@@ -44,6 +44,7 @@ async def _handle_summarize(websocket: WebSocket, data: dict):
     meeting_id = data.get("meeting_id", "")
 
     api_key = await get_setting(f"apikey_{provider_name}", "")
+    base_url = await get_setting(f"baseurl_{provider_name}", "")
     if not api_key and provider_name != "ollama":
         await websocket.send_json({"type": "error", "message": f"请先配置 {provider_name} 的 API Key"})
         return
@@ -57,7 +58,7 @@ async def _handle_summarize(websocket: WebSocket, data: dict):
     ]
 
     try:
-        provider = create_provider(provider_name, api_key)
+        provider = create_provider(provider_name, api_key, base_url)
         full_response = ""
 
         await websocket.send_json({"type": "start", "action": "summarize"})
@@ -90,6 +91,7 @@ async def _handle_chat(websocket: WebSocket, data: dict):
     meeting_id = data.get("meeting_id", "")
 
     api_key = await get_setting(f"apikey_{provider_name}", "")
+    base_url = await get_setting(f"baseurl_{provider_name}", "")
     if not api_key and provider_name != "ollama":
         await websocket.send_json({"type": "error", "message": f"请先配置 {provider_name} 的 API Key"})
         return
@@ -101,7 +103,7 @@ async def _handle_chat(websocket: WebSocket, data: dict):
     ]
 
     try:
-        provider = create_provider(provider_name, api_key)
+        provider = create_provider(provider_name, api_key, base_url)
         full_response = ""
 
         await websocket.send_json({"type": "start", "action": "chat"})
