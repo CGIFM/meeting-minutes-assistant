@@ -2,13 +2,11 @@
   "name": "meeting-minutes-assistant",
   "version": "1.0.0",
   "description": "会议纪要助手 - AI 驱动的会议转录与纪要生成",
-  "main": "dist-electron/main.js",
+  "private": true,
   "scripts": {
     "dev": "vite",
-    "dev:electron": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
-    "build": "tsc && vite build",
-    "build:electron": "npm run build && tsc -p tsconfig.electron.json",
-    "package": "npm run build:electron && electron-builder --mac --arm64",
+    "build": "vite build",
+    "build:app": "vite build && bash build-mac-app.sh",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -23,25 +21,9 @@
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.4.0",
     "autoprefixer": "^10.4.0",
-    "concurrently": "^9.0.0",
-    "electron": "^35.0.0",
-    "electron-builder": "^26.0.0",
     "postcss": "^8.5.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.8.0",
-    "vite": "^6.0.0",
-    "wait-on": "^8.0.0"
-  },
-  "build": {
-    "appId": "com.meeting-minutes-assistant",
-    "productName": "会议纪要助手",
-    "mac": {
-      "target": "dmg",
-      "icon": "resources/icon.icns",
-      "category": "public.app-category.productivity"
-    },
-    "extraResources": [
-      { "from": "backend", "to": "backend" }
-    ]
+    "vite": "^6.0.0"
   }
 }
