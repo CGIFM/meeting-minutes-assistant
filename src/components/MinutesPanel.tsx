@@ -11,6 +11,7 @@ export function MinutesPanel({ onChat, onRegenerate }: MinutesPanelProps) {
   const { currentMeeting, isGenerating } = useAppStore()
   const [input, setInput] = useState('')
   const contentRef = useRef<HTMLDivElement>(null)
+  const minutesRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (contentRef.current) {
@@ -87,6 +88,29 @@ export function MinutesPanel({ onChat, onRegenerate }: MinutesPanelProps) {
   const handleExportPdf = () => callExport('pdf')
   const handleExportWord = () => callExport('word')
 
+  const handleExportImage = async () => {
+    if (!currentMeeting.minutes || !minutesRef.current) return
+    try {
+      const html2canvas = (await import('html2canvas')).default
+      const canvas = await html2canvas(minutesRef.current, {
+        backgroundColor: '#1a1a22',
+        scale: 2,
+        logging: false,
+      })
+      canvas.toBlob((blob) => {
+        if (!blob) return
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `${currentMeeting.filename.replace(/\.[^.]+$/, '')}_会议纪要.png`
+        a.click()
+        URL.revokeObjectURL(url)
+      })
+    } catch (e: any) {
+      alert(`图片导出失败: ${e.message}`)
+    }
+  }
+
   return (
     <div style={{width:'50%',display:'flex',flexDirection:'column',overflow:'hidden'}}>
       {/* Header */}
@@ -116,6 +140,9 @@ export function MinutesPanel({ onChat, onRegenerate }: MinutesPanelProps) {
             <button onClick={handleExportWord} style={{fontSize:'10px',color:'rgba(255,255,255,0.4)',background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:'6px',padding:'4px 8px',cursor:'pointer'}}>
               Word
             </button>
+            <button onClick={handleExportImage} title="导出为 PNG 图片" style={{fontSize:'10px',color:'rgba(255,255,255,0.4)',background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:'6px',padding:'4px 8px',cursor:'pointer'}}>
+              图片
+            </button>
             <button onClick={handleExportMd} style={{fontSize:'10px',color:'rgba(255,255,255,0.4)',background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:'6px',padding:'4px 8px',cursor:'pointer'}}>
               .md
             </button>
@@ -129,7 +156,7 @@ export function MinutesPanel({ onChat, onRegenerate }: MinutesPanelProps) {
       {/* Content */}
       <div ref={contentRef} style={{flex:1,overflowY:'auto',padding:'20px'}}>
         {currentMeeting.minutes ? (
-          <div className="prose prose-sm prose-invert max-w-none" style={{color:'rgba(255,255,255,0.7)',fontSize:'13px',lineHeight:1.8}}>
+          <div ref={minutesRef} className="prose prose-sm prose-invert max-w-none" style={{color:'rgba(255,255,255,0.7)',fontSize:'13px',lineHeight:1.8,padding:'8px'}}>
             <ReactMarkdown>{currentMeeting.minutes}</ReactMarkdown>
           </div>
         ) : (
@@ -195,7 +222,7 @@ export function MinutesPanel({ onChat, onRegenerate }: MinutesPanelProps) {
           </button>
         </div>
         <p style={{fontSize:'10px',color:'rgba(255,255,255,0.2)',margin:'6px 0 0 4px'}}>
-          Shift+Enter 换行，Enter 发送
+          💡 可不断追问修改纪要，如"按优先级排序行动项"、"改成要点列表"<br/>Shift+Enter 换行，Enter 发送
         </p>
       </div>
 
