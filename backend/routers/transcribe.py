@@ -29,7 +29,7 @@ async def get_audio_file(job_id: str, filename: str):
 
 
 @router.post("/transcribe")
-async def start_transcription(file: UploadFile = File(...)):
+async def start_transcription(file: UploadFile = File(...), asr_model: str = "sensevoice"):
     if not is_supported(file.filename):
         return {"error": f"不支持的格式: {file.filename}"}
 
@@ -49,11 +49,19 @@ async def start_transcription(file: UploadFile = File(...)):
         "result": None,
         "error": None,
         "segments_so_far": [],
+        "asr_model": asr_model,
     }
 
-    asyncio.create_task(_run_transcription(job_id, str(original_path)))
+    asyncio.create_task(_run_transcription(job_id, str(original_path), asr_model))
 
     return {"job_id": job_id, "filename": file.filename}
+
+
+@router.get("/asr-models")
+async def list_asr_models():
+    """返回可用的 ASR 模型列表"""
+    from services.asr_engine import ASR_MODELS
+    return {"models": [{"id": k, "name": v["name"]} for k, v in ASR_MODELS.items()]}
 
 
 @router.get("/transcribe/{job_id}")
@@ -96,7 +104,7 @@ async def ws_transcribe(websocket: WebSocket, job_id: str):
         pass
 
 
-async def _run_transcription(job_id: str, audio_path: str):
+async def _run_transcription(job_id: str, audio_path: str, asr_model: str = "sensevoice"):
     job = _jobs[job_id]
     job["status"] = "processing"
     job["progress"] = 0.1
@@ -119,7 +127,7 @@ async def _run_transcription(job_id: str, audio_path: str):
             job["segments_so_far"].append(segment)
             job["progress"] = 0.4 + 0.55 * ((idx + 1) / total)
 
-        result = await asyncio.to_thread(engine.transcribe, wav_path, hotwords_str, on_segment)
+        result = await asyncio.to_thread(engine.transcribe, wav_path, hotwords_str, on_segment, asr_model)
 
         job["status"] = "completed"
         job["progress"] = 1.0

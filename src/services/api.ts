@@ -11,10 +11,10 @@ const BASE_URL = () => {
   return port ? `http://127.0.0.1:${port}` : ''
 }
 
-export async function uploadAudio(file: File): Promise<{ job_id: string; filename: string }> {
+export async function uploadAudio(file: File, asrModel: string = 'sensevoice'): Promise<{ job_id: string; filename: string }> {
   const form = new FormData()
   form.append('file', file)
-  const res = await fetch(`${BASE_URL()}/api/transcribe`, { method: 'POST', body: form })
+  const res = await fetch(`${BASE_URL()}/api/transcribe?asr_model=${encodeURIComponent(asrModel)}`, { method: 'POST', body: form })
   return res.json()
 }
 

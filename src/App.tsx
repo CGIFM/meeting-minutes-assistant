@@ -8,6 +8,7 @@ import { ProgressBar } from './components/ProgressBar'
 import { SettingsModal } from './components/SettingsModal'
 import { GenerateDialog } from './components/GenerateDialog'
 import { Onboarding } from './components/Onboarding'
+import { AsrModelDialog } from './components/AsrModelDialog'
 import { uploadAudio, getApiKeys, getMeetings, getMeeting, BACKEND_PORT } from './services/api'
 import { connectTranscribeWS, ChatWebSocket } from './services/websocket'
 
@@ -17,22 +18,16 @@ export default function App() {
   const [showGenerateDialog, setShowGenerateDialog] = useState(false)
   const [pendingMeetingId, setPendingMeetingId] = useState('')
   const [showOnboarding, setShowOnboarding] = useState(false)
+  const [pendingFile, setPendingFile] = useState<File | null>(null)
 
-  const handleFileDrop = useCallback(async (file: File) => {
+  const startTranscription = useCallback(async (file: File, asrModel: string) => {
     store.setTranscribing(true)
     store.setTranscribeProgress(0.05)
 
     try {
-      const { job_id, filename } = await uploadAudio(file)
-
+      const { job_id, filename } = await uploadAudio(file, asrModel)
       const newMeeting = {
-        id: job_id,
-        filename,
-        duration: 0,
-        transcript: '',
-        minutes: '',
-        segments: [],
-        chatHistory: [],
+        id: job_id, filename, duration: 0, transcript: '', minutes: '', segments: [], chatHistory: [],
         created_at: new Date().toISOString(),
       }
       store.addMeeting(newMeeting)
@@ -42,32 +37,26 @@ export default function App() {
         (progress) => store.setTranscribeProgress(progress),
         (segment) => {
           const meeting = store.currentMeeting
-          if (meeting) {
-            store.updateMeeting(job_id, {
-              segments: [...(meeting.segments || []), segment],
-            })
-          }
+          if (meeting) store.updateMeeting(job_id, { segments: [...(meeting.segments || []), segment] })
         },
         (result) => {
           store.setTranscribing(false)
           store.setTranscribeProgress(1)
-          store.updateMeeting(job_id, {
-            transcript: result.full_text,
-            segments: result.segments,
-          })
+          store.updateMeeting(job_id, { transcript: result.full_text, segments: result.segments })
           setPendingMeetingId(job_id)
           setShowGenerateDialog(true)
         },
-        (error) => {
-          store.setTranscribing(false)
-          alert(`转录失败: ${error}`)
-        },
+        (error) => { store.setTranscribing(false); alert(`转录失败: ${error}`) },
       )
     } catch (e: any) {
       store.setTranscribing(false)
       alert(`上传失败: ${e.message}`)
     }
   }, [store])
+
+  const handleFileDrop = useCallback((file: File) => {
+    setPendingFile(file)
+  }, [])
 
   const handleGenerate = useCallback(async (options: { provider: string; model: string; customPrompt: string }) => {
     setShowGenerateDialog(false)
@@ -222,6 +211,18 @@ export default function App() {
         <Onboarding
           onOpenSettings={() => { setShowOnboarding(false); store.setShowSettings(true) }}
           onDismiss={() => setShowOnboarding(false)}
+        />
+      )}
+
+      {pendingFile && (
+        <AsrModelDialog
+          filename={pendingFile.name}
+          onConfirm={(modelId) => {
+            const f = pendingFile
+            setPendingFile(null)
+            startTranscription(f, modelId)
+          }}
+          onCancel={() => setPendingFile(null)}
         />
       )}
 

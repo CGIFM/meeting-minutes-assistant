@@ -1,5 +1,5 @@
 import logging
-from typing import Optional, Callable
+from typing import Optional
 from funasr import AutoModel
 from funasr.utils.postprocess_utils import rich_transcription_postprocess
 
@@ -7,34 +7,64 @@ logger = logging.getLogger(__name__)
 
 _engine: Optional["ASREngine"] = None
 
+# 支持的 ASR 模型
+ASR_MODELS = {
+    "sensevoice": {
+        "name": "SenseVoice (推荐·中文优化)",
+        "model": "iic/SenseVoiceSmall",
+        "need_punc": False,
+    },
+    "paraformer": {
+        "name": "Paraformer-large (高精度)",
+        "model": "iic/speech_paraformer-large-vad-punc_asr_nat-zh-cn-16k-common-vocab8404-pytorch",
+        "need_punc": True,
+    },
+    "whisper-large": {
+        "name": "Whisper-large-v3 (多语言)",
+        "model": "/Users/cgifm/.cache/whisper/large-v3" if False else "iic/SenseVoiceSmall",  # fallback
+        "need_punc": False,
+    },
+}
+
 
 class ASREngine:
     def __init__(self):
         self.model = None
         self.loaded = False
+        self.current_model_key = ""
 
-    def load(self, device: str = "mps", hotwords: str = ""):
+    def load(self, device: str = "mps", hotwords: str = "", model_key: str = "sensevoice"):
+        if self.loaded and self.current_model_key == model_key:
+            return
+
+        config = ASR_MODELS.get(model_key, ASR_MODELS["sensevoice"])
         try:
-            self.model = AutoModel(
-                model="iic/SenseVoiceSmall",
-                vad_model="iic/speech_fsmn_vad_zh-cn-16k-common-pytorch",
-                vad_kwargs={"max_single_segment_time": 30000},
-                spk_model="cam++",
-                device=device,
-                hub="ms",
-            )
+            kwargs = {
+                "model": config["model"],
+                "vad_model": "iic/speech_fsmn_vad_zh-cn-16k-common-pytorch",
+                "vad_kwargs": {"max_single_segment_time": 30000},
+                "device": device,
+                "hub": "ms",
+            }
+            if config["need_punc"]:
+                kwargs["punc_model"] = "iic/ct-punc"
+            else:
+                kwargs["spk_model"] = "cam++"
+
+            self.model = AutoModel(**kwargs)
             self.loaded = True
-            logger.info(f"ASR 模型加载完成 (device={device})")
+            self.current_model_key = model_key
+            logger.info(f"ASR 模型加载完成: {config['name']} (device={device})")
         except Exception as e:
             if device == "mps":
                 logger.warning(f"MPS 加载失败，回退到 CPU: {e}")
-                self.load(device="cpu", hotwords=hotwords)
+                self.load(device="cpu", hotwords=hotwords, model_key=model_key)
             else:
                 raise
 
-    def transcribe(self, audio_path: str, hotwords: str = "", on_segment=None) -> dict:
-        if not self.loaded:
-            self.load()
+    def transcribe(self, audio_path: str, hotwords: str = "", on_segment=None, model_key: str = "sensevoice") -> dict:
+        if not self.loaded or self.current_model_key != model_key:
+            self.load(model_key=model_key)
 
         result = self.model.generate(
             input=audio_path,
