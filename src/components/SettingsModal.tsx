@@ -14,7 +14,7 @@ const BASE_URL = () => `http://127.0.0.1:${BACKEND_PORT()}`
 
 export function SettingsModal() {
   const { setShowSettings, settings, setSettings } = useAppStore()
-  const [tab, setTab] = useState<'llm' | 'asr' | 'prompt'>('llm')
+  const [tab, setTab] = useState<'llm' | 'asr' | 'prompt' | 'export'>('llm')
   const [apiKeys, setApiKeys] = useState<Record<string, any>>({})
   const [keyInputs, setKeyInputs] = useState<Record<string, string>>({})
   const [baseUrlInputs, setBaseUrlInputs] = useState<Record<string, string>>({})
@@ -22,6 +22,8 @@ export function SettingsModal() {
   const [provider, setProvider] = useState(settings.default_provider)
   const [model, setModel] = useState(settings.default_model)
   const [prompt, setPrompt] = useState(settings.prompt_template)
+  const [obsidianDir, setObsidianDir] = useState(settings.obsidian_dir || '')
+  const [exportDir, setExportDir] = useState(settings.export_dir || '')
   const [testResults, setTestResults] = useState<Record<string, { success: boolean; message: string }>>({})
   const [modelLists, setModelLists] = useState<Record<string, string[]>>({})
   const [testing, setTesting] = useState<string>('')
@@ -37,6 +39,8 @@ export function SettingsModal() {
       setProvider(s.default_provider)
       setModel(s.default_model)
       setPrompt(s.prompt_template)
+      setObsidianDir(s.obsidian_dir || '')
+      setExportDir(s.export_dir || '')
       setSettings(s)
       const keys = await getApiKeys()
       setApiKeys(keys)
@@ -110,8 +114,14 @@ export function SettingsModal() {
   }
 
   const handleSave = async () => {
-    await updateSettings({ hotwords, default_provider: provider, default_model: model, prompt_template: prompt })
-    setSettings({ hotwords, default_provider: provider, default_model: model, prompt_template: prompt })
+    await updateSettings({
+      hotwords, default_provider: provider, default_model: model, prompt_template: prompt,
+      obsidian_dir: obsidianDir, export_dir: exportDir,
+    })
+    setSettings({
+      hotwords, default_provider: provider, default_model: model, prompt_template: prompt,
+      obsidian_dir: obsidianDir, export_dir: exportDir,
+    })
     setShowSettings(false)
   }
 
@@ -137,7 +147,7 @@ export function SettingsModal() {
 
         {/* Tabs */}
         <div style={{display:'flex',padding:'0 24px',borderBottom:'1px solid rgba(255,255,255,0.06)'}}>
-          {([['llm','LLM 设置'],['asr','语音识别'],['prompt','提示词']] as const).map(([id, label]) => (
+          {([['llm','LLM 设置'],['asr','语音识别'],['prompt','提示词'],['export','导出目录']] as const).map(([id, label]) => (
             <button key={id} onClick={() => setTab(id as any)} style={{
               padding:'12px 16px',fontSize:'11px',fontWeight:500,border:'none',cursor:'pointer',
               borderBottom: tab===id ? '2px solid #60a5fa' : '2px solid transparent',
@@ -255,6 +265,26 @@ export function SettingsModal() {
               <p style={{fontSize:'10px',color:'rgba(255,255,255,0.25)',margin:'0 0 10px'}}>使用 {'{transcript}'} 作为转录文本占位符</p>
               <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={14} style={{...inputStyle,resize:'none',fontFamily:'monospace',fontSize:'11px',lineHeight:'1.6'}} />
               <button onClick={() => setPrompt('')} style={{marginTop:'10px',fontSize:'11px',color:'#60a5fa',background:'none',border:'none',cursor:'pointer'}}>恢复默认提示词</button>
+            </div>
+          )}
+
+          {tab === 'export' && (
+            <div>
+              <label style={{display:'block',fontSize:'11px',color:'rgba(255,255,255,0.5)',marginBottom:'6px'}}>Obsidian 保存目录</label>
+              <p style={{fontSize:'10px',color:'rgba(255,255,255,0.25)',margin:'0 0 8px',lineHeight:1.6}}>
+                点击 Obsidian 导出时直接保存到此目录下的「会议纪要」子文件夹（无需弹窗）。留空则自动检测 ~/Documents/CGIF_NOTE 等常见 vault。
+              </p>
+              <input type="text" value={obsidianDir} onChange={(e) => setObsidianDir(e.target.value)} placeholder="/Users/你/Documents/CGIF_NOTE" style={{...inputStyle,marginBottom:'18px'}} />
+
+              <label style={{display:'block',fontSize:'11px',color:'rgba(255,255,255,0.5)',marginBottom:'6px'}}>PDF / Word / 图片 / MD 默认保存目录</label>
+              <p style={{fontSize:'10px',color:'rgba(255,255,255,0.25)',margin:'0 0 8px',lineHeight:1.6}}>
+                留空则使用浏览器默认下载目录（通常是 ~/Downloads）。
+              </p>
+              <input type="text" value={exportDir} onChange={(e) => setExportDir(e.target.value)} placeholder="/Users/你/Documents/会议纪要" style={{...inputStyle,marginBottom:'14px'}} />
+
+              <div style={{padding:'10px 12px',background:'rgba(96,165,250,0.06)',border:'1px solid rgba(96,165,250,0.15)',borderRadius:'8px',fontSize:'10px',color:'rgba(255,255,255,0.5)',lineHeight:1.6}}>
+                💡 修改后记得点底部「保存设置」。Obsidian 目录支持相对路径（相对家目录）。
+              </div>
             </div>
           )}
         </div>

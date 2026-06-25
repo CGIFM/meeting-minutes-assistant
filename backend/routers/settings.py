@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sqlite3
 from pathlib import Path
 from fastapi import APIRouter
@@ -60,6 +61,8 @@ class SettingsUpdate(BaseModel):
     default_provider: Optional[str] = None
     default_model: Optional[str] = None
     prompt_template: Optional[str] = None
+    obsidian_dir: Optional[str] = None
+    export_dir: Optional[str] = None
 
 
 class APIKeyUpdate(BaseModel):
@@ -81,6 +84,8 @@ async def get_settings():
         "default_provider": await get_setting("default_provider", "claude"),
         "default_model": await get_setting("default_model", ""),
         "prompt_template": await get_setting("prompt_template", DEFAULT_MEETING_MINUTES_PROMPT),
+        "obsidian_dir": await get_setting("obsidian_dir", ""),
+        "export_dir": await get_setting("export_dir", ""),
     }
 
 
@@ -94,6 +99,10 @@ async def update_settings(data: SettingsUpdate):
         await set_setting("default_model", data.default_model)
     if data.prompt_template is not None:
         await set_setting("prompt_template", data.prompt_template)
+    if data.obsidian_dir is not None:
+        await set_setting("obsidian_dir", data.obsidian_dir)
+    if data.export_dir is not None:
+        await set_setting("export_dir", data.export_dir)
     return {"status": "ok"}
 
 
@@ -310,4 +319,58 @@ async def get_meeting(meeting_id: str):
     if not row:
         return {"error": "会议不存在"}
 
-    return {**dict(row), "chat_history": [dict(c) for c in chats]}
+    import json as _json
+    data = dict(row)
+    # segments 存的是 JSON 字符串，反序列化为数组
+    seg_str = data.get("segments")
+    segments: list = []
+    if isinstance(seg_str, str) and seg_str:
+        try:
+            segments = _json.loads(seg_str)
+        except Exception:
+            segments = []
+
+    # 历史数据兜底：segments 为空但 transcript 有内容时，从 transcript 反解析
+    if not segments and data.get("transcript"):
+        segments = _parse_segments_from_transcript(data["transcript"])
+        if segments:
+            # 写回 DB，下次直接命中
+            try:
+                dbw = await get_db()
+                await dbw.execute(
+                    "UPDATE meetings SET segments = ?, updated_at = datetime('now') WHERE id = ?",
+                    (_json.dumps(segments, ensure_ascii=False), meeting_id),
+                )
+                await dbw.commit()
+                await dbw.close()
+            except Exception:
+                pass
+
+    data["segments"] = segments
+    return {**data, "chat_history": [dict(c) for c in chats]}
+
+
+def _parse_segments_from_transcript(text: str) -> list:
+    """从 '[mm:ss] 说话人N: 文本' 格式的转录文本解析 segments。
+    支持 [m:ss] / [mm:ss] / [h:mm:ss]。
+    """
+    out = []
+    pat = re.compile(r"\[(\d{1,2}):(\d{2})(?::(\d{2}))?\]\s*([^:\n]+?)\s*:\s*(.+)")
+    for line in (text or "").splitlines():
+        m = pat.match(line.strip())
+        if not m:
+            continue
+        a, b, c, speaker, body = m.groups()
+        if c is not None:
+            seconds = int(a) * 3600 + int(b) * 60 + int(c)
+        elif int(a) >= 60:
+            seconds = int(a) * 60 + int(b)
+        else:
+            seconds = int(a) * 60 + int(b)
+        out.append({
+            "start": seconds,
+            "end": seconds,
+            "speaker": speaker.strip(),
+            "text": body.strip(),
+        })
+    return out

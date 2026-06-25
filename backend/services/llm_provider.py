@@ -1,4 +1,5 @@
 import json
+import codecs
 from abc import ABC, abstractmethod
 from typing import AsyncIterator
 
@@ -13,6 +14,45 @@ class LLMProvider(ABC):
     @abstractmethod
     def default_model(self) -> str:
         ...
+
+
+async def iter_stream_lines_utf8(resp) -> AsyncIterator[str]:
+    """从 httpx 流式响应按行 yield 文本，强制 UTF-8 增量解码。
+
+    解决的问题：httpx 默认按 Content-Type 的 charset 解码，没指定时回退到
+    ISO-8859-1，会把中文 UTF-8 字节流错解成乱码（随机出现 \\uFFFD）。
+
+    用 codecs 增量 UTF-8 解码器，跨 chunk 的多字节字符也能正确拼接。
+    """
+    decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
+    buffer = ""
+    async for chunk in resp.aiter_bytes():
+        if not chunk:
+            continue
+        text = decoder.decode(chunk)
+        if not text:
+            continue
+        buffer += text
+        # 按通用换行符切分
+        while True:
+            # 找最早出现的换行
+            nl_pos = -1
+            for nl in ("\r\n", "\n", "\r"):
+                p = buffer.find(nl)
+                if p != -1 and (nl_pos == -1 or p < nl_pos):
+                    nl_pos = p
+                    nl_len = len(nl)
+            if nl_pos == -1:
+                break
+            line = buffer[:nl_pos]
+            buffer = buffer[nl_pos + nl_len:]
+            yield line
+    # flush 残留
+    final = decoder.decode(b'', final=True)
+    if final:
+        buffer += final
+    if buffer:
+        yield buffer
 
 
 class ClaudeProvider(LLMProvider):
@@ -51,7 +91,7 @@ class ClaudeProvider(LLMProvider):
 
         async with httpx.AsyncClient(timeout=120) as client:
             async with client.stream("POST", f"{self.base_url}/v1/messages", json=body, headers=headers) as resp:
-                async for line in resp.aiter_lines():
+                async for line in iter_stream_lines_utf8(resp):
                     if line.startswith("data: "):
                         data = line[6:]
                         if data == "[DONE]":
@@ -69,7 +109,7 @@ class ClaudeProvider(LLMProvider):
 class OpenAIProvider(LLMProvider):
     def __init__(self, api_key: str, base_url: str = "https://api.openai.com/v1"):
         self.api_key = api_key
-        self.base_url = base_url
+        self.base_url = base_url.rstrip("/") if base_url else "https://api.openai.com/v1"
 
     def default_model(self) -> str:
         return "gpt-4o"
@@ -88,7 +128,7 @@ class OpenAIProvider(LLMProvider):
 
         async with httpx.AsyncClient(timeout=120) as client:
             async with client.stream("POST", f"{self.base_url}/chat/completions", json=body, headers=headers) as resp:
-                async for line in resp.aiter_lines():
+                async for line in iter_stream_lines_utf8(resp):
                     if line.startswith("data: "):
                         data = line[6:]
                         if data == "[DONE]":
@@ -128,7 +168,7 @@ class GeminiProvider(LLMProvider):
 
         async with httpx.AsyncClient(timeout=120) as client:
             async with client.stream("POST", url, json=body) as resp:
-                async for line in resp.aiter_lines():
+                async for line in iter_stream_lines_utf8(resp):
                     if line.startswith("data: "):
                         try:
                             data = json.loads(line[6:])
@@ -142,7 +182,7 @@ class GeminiProvider(LLMProvider):
 
 class OllamaProvider(LLMProvider):
     def __init__(self, base_url: str = "http://localhost:11434"):
-        self.base_url = base_url
+        self.base_url = base_url.rstrip("/") if base_url else "http://localhost:11434"
 
     def default_model(self) -> str:
         return "qwen3:8b"
@@ -157,7 +197,8 @@ class OllamaProvider(LLMProvider):
 
         async with httpx.AsyncClient(timeout=300) as client:
             async with client.stream("POST", f"{self.base_url}/api/chat", json=body) as resp:
-                async for line in resp.aiter_lines():
+                # Ollama 用 NDJSON（每行一个 JSON），不是 SSE
+                async for line in iter_stream_lines_utf8(resp):
                     if line.strip():
                         try:
                             data = json.loads(line)

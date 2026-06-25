@@ -37,6 +37,14 @@ async def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
     """)
+    # 轻量迁移：补充字段（已存在则忽略）
+    async def add_column(name: str, ddl: str):
+        cursor = await db.execute(f"PRAGMA table_info(meetings)")
+        cols = await cursor.fetchall()
+        if not any(c["name"] == name for c in cols):
+            await db.execute(ddl)
+    await add_column("segments", "ALTER TABLE meetings ADD COLUMN segments TEXT")
+    await add_column("updated_at", "ALTER TABLE meetings ADD COLUMN updated_at TEXT")
     await db.commit()
     await db.close()
 

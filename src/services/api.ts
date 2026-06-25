@@ -59,4 +59,54 @@ export async function getMeeting(id: string) {
   return res.json()
 }
 
+export async function deleteMeeting(id: string) {
+  const res = await fetch(`${BASE_URL()}/api/meetings/${id}`, { method: 'DELETE' })
+  return res.json()
+}
+
+export async function renameMeeting(id: string, filename: string) {
+  const res = await fetch(`${BASE_URL()}/api/meetings/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename }),
+  })
+  return res.json()
+}
+
+export async function saveMeetingState(id: string, payload: { segments?: any[]; transcript?: string; minutes?: string }) {
+  const res = await fetch(`${BASE_URL()}/api/meetings/${id}/state`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return res.json()
+}
+
+export async function clearChatHistory(id: string) {
+  const res = await fetch(`${BASE_URL()}/api/meetings/${id}/chat`, { method: 'DELETE' })
+  return res.json()
+}
+
+// === 实时录音 API ===
+
+export async function recordStart(): Promise<{ job_id: string }> {
+  const res = await fetch(`${BASE_URL()}/api/record/start`, { method: 'POST' })
+  return res.json()
+}
+
+export async function recordChunk(jobId: string, chunk: Blob, index: number) {
+  const form = new FormData()
+  form.append('file', chunk, `chunk_${index}.webm`)
+  const res = await fetch(`${BASE_URL()}/api/record/${jobId}/chunk`, {
+    method: 'POST',
+    body: form,
+  })
+  return res.json()
+}
+
+export async function recordStop(jobId: string) {
+  const res = await fetch(`${BASE_URL()}/api/record/${jobId}/stop`, { method: 'POST' })
+  return res.json()
+}
+
 export { BACKEND_PORT }

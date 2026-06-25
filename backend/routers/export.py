@@ -35,13 +35,19 @@ class ExportRequest(BaseModel):
 
 @router.post("/export/obsidian")
 async def export_obsidian(data: ExportRequest):
-    """导出到 Obsidian vault 的会议纪要文件夹"""
-    vault = find_obsidian_vault()
-    if not vault:
-        return {"success": False, "message": "未找到 Obsidian vault（请确认 ~/Documents/CGIF_NOTE 存在）"}
-
-    notes_dir = vault / "会议纪要"
-    notes_dir.mkdir(parents=True, exist_ok=True)
+    """导出到 Obsidian vault 的会议纪要文件夹。
+    优先用用户设置的 obsidian_dir；否则自动检测常见 vault 路径。
+    """
+    user_dir = await get_setting("obsidian_dir", "")
+    if user_dir and Path(user_dir).expanduser().exists():
+        notes_dir = Path(user_dir).expanduser() / "会议纪要"
+        notes_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        vault = find_obsidian_vault()
+        if not vault:
+            return {"success": False, "message": "未配置 Obsidian 目录，且未检测到默认 vault。请在设置中填写 obsidian_dir。"}
+        notes_dir = vault / "会议纪要"
+        notes_dir.mkdir(parents=True, exist_ok=True)
 
     # 文件名清理
     safe_name = re.sub(r'[\\/:*?"<>|]', " ", data.filename)

@@ -1,12 +1,17 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAppStore } from '../stores/appStore'
+import { saveMeetingState } from '../services/api'
+import { buildTranscriptMd } from '../services/transcriptDoc'
 
 interface TranscriptPanelProps {
   audioUrl?: string
+  onFixTranscript?: () => void
+  onUndoFix?: () => void
+  canUndoFix?: boolean
 }
 
-export function TranscriptPanel({ audioUrl }: TranscriptPanelProps) {
-  const { currentMeeting, updateMeeting } = useAppStore()
+export function TranscriptPanel({ audioUrl, onFixTranscript, onUndoFix, canUndoFix }: TranscriptPanelProps) {
+  const { currentMeeting, updateMeeting, transcriptDiffs } = useAppStore()
   const [editingSpeaker, setEditingSpeaker] = useState<string | null>(null)
   const [newName, setNewName] = useState('')
   const [currentTime, setCurrentTime] = useState(0)
@@ -53,6 +58,58 @@ export function TranscriptPanel({ audioUrl }: TranscriptPanelProps) {
     }
   }, [currentTime, currentMeeting, audioUrl, activeSegment, isPlaying])
 
+  // 键盘控制：空格 = 播放/暂停，左右箭头 = 上一句/下一句
+  const activeSegmentRef = useRef(-1)
+  useEffect(() => { activeSegmentRef.current = activeSegment }, [activeSegment])
+
+  useEffect(() => {
+    if (!audioUrl) return
+    const onKey = (e: KeyboardEvent) => {
+      // 输入框聚焦时不响应（避免和打字冲突）
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return
+      // 改名弹层打开时不抢键盘
+      if (editingSpeaker) return
+
+      const audio = audioRef.current
+      if (!audio || !currentMeeting?.segments.length) return
+
+      if (e.code === 'Space') {
+        e.preventDefault()
+        if (audio.paused) audio.play().catch(() => {})
+        else audio.pause()
+      } else if (e.code === 'ArrowRight') {
+        e.preventDefault()
+        const cur = activeSegmentRef.current
+        const next = cur < 0 ? 0 : Math.min(cur + 1, currentMeeting.segments.length - 1)
+        const seg = currentMeeting.segments[next]
+        if (seg) {
+          audio.currentTime = seg.start
+          setCurrentTime(seg.start)
+          audio.play().catch(() => {})
+        }
+      } else if (e.code === 'ArrowLeft') {
+        e.preventDefault()
+        const cur = activeSegmentRef.current
+        // 当前段落已经播放超过 1.5 秒，先回到本段开头；否则跳到上一段
+        const curSeg = cur >= 0 ? currentMeeting.segments[cur] : null
+        if (curSeg && audio.currentTime - curSeg.start > 1.5) {
+          audio.currentTime = curSeg.start
+          setCurrentTime(curSeg.start)
+        } else {
+          const prev = cur <= 0 ? 0 : Math.max(cur - 1, 0)
+          const seg = currentMeeting.segments[prev]
+          if (seg) {
+            audio.currentTime = seg.start
+            setCurrentTime(seg.start)
+          }
+        }
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [audioUrl, currentMeeting, editingSpeaker])
+
   if (!currentMeeting) return null
 
   const formatTime = (seconds: number) => {
@@ -91,6 +148,8 @@ export function TranscriptPanel({ audioUrl }: TranscriptPanelProps) {
     )
     const updatedTranscript = updatedSegments.map(seg => `[${formatTime(seg.start)}] ${seg.speaker}: ${seg.text}`).join('\n')
     updateMeeting(currentMeeting.id, { segments: updatedSegments, transcript: updatedTranscript })
+    // 改名是离散操作，立即同步到数据库（不走 debounce，避免 app 退出时丢）
+    saveMeetingState(currentMeeting.id, { segments: updatedSegments, transcript: updatedTranscript }).catch(() => {})
     setEditingSpeaker(null); setNewName('')
   }
 
@@ -100,9 +159,7 @@ export function TranscriptPanel({ audioUrl }: TranscriptPanelProps) {
   }
 
   const handleExportTranscript = () => {
-    const header = `# ${currentMeeting.filename} - 转录记录\n\n> 导出时间：${new Date().toLocaleString('zh-CN')}\n\n`
-    const body = currentMeeting.segments.map(seg => `**[${formatTime(seg.start)}] ${seg.speaker}:** ${seg.text}`).join('\n\n')
-    const content = header + body + '\n'
+    const content = buildTranscriptMd(currentMeeting)
     const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -166,6 +223,13 @@ export function TranscriptPanel({ audioUrl }: TranscriptPanelProps) {
 
   const playhead = duration > 0 ? currentTime / duration : 0
 
+  const kbdStyle: React.CSSProperties = {
+    display:'inline-block',padding:'1px 5px',background:'rgba(255,255,255,0.08)',
+    border:'1px solid rgba(255,255,255,0.12)',borderBottomWidth:'2px',
+    borderRadius:'4px',fontFamily:'monospace',fontSize:'9px',color:'rgba(255,255,255,0.7)',
+    minWidth:'14px',textAlign:'center',
+  }
+
   const SpeakerChip = ({ speaker, size = 'small' }: { speaker: string; size?: 'small' | 'big' }) => {
     const style = getSpeakerStyle(speaker)
     const big = size === 'big'
@@ -212,6 +276,11 @@ export function TranscriptPanel({ audioUrl }: TranscriptPanelProps) {
                 <span>{formatTime(currentTime)}</span>
                 <span>{formatTime(duration)}</span>
               </div>
+              <div style={{fontSize:'9px',color:'rgba(255,255,255,0.25)',display:'flex',gap:'10px',flexWrap:'wrap'}}>
+                <span><kbd style={kbdStyle}>空格</kbd> 播放/暂停</span>
+                <span><kbd style={kbdStyle}>←</kbd> 上一句</span>
+                <span><kbd style={kbdStyle}>→</kbd> 下一句</span>
+              </div>
             </div>
           </div>
           <audio ref={audioRef} src={audioUrl} preload="none" style={{display:'none',pointerEvents:'none'}} />
@@ -225,6 +294,42 @@ export function TranscriptPanel({ audioUrl }: TranscriptPanelProps) {
           <p style={{fontSize:'11px',color:'rgba(255,255,255,0.25)',margin:'4px 0 0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{currentMeeting.filename}</p>
         </div>
         <div style={{display:'flex',gap:'4px',flexShrink:0}}>
+          {onFixTranscript && currentMeeting && currentMeeting.segments.length > 0 && (
+            <button
+              onClick={onUndoFix}
+              disabled={!canUndoFix}
+              title={canUndoFix ? "撤回上一次 AI 修正" : "没有可撤回的修正"}
+              style={{
+                fontSize:'10px',
+                padding:'4px 8px',
+                borderRadius:'6px',
+                cursor: canUndoFix ? 'pointer' : 'not-allowed',
+                opacity: canUndoFix ? 1 : 0.4,
+                color:'#fbbf24',
+                background:'rgba(251,191,36,0.08)',
+                border: canUndoFix ? '1px solid rgba(251,191,36,0.3)' : '1px solid rgba(251,191,36,0.15)',
+              }}
+            >
+              ↶ 撤回
+            </button>
+          )}
+          {onFixTranscript && currentMeeting && currentMeeting.segments.length > 0 && (
+            <button
+              onClick={onFixTranscript}
+              title="让 AI 修正转录：纠错、措辞优化、热词纠正、指定替换"
+              style={{
+                fontSize:'10px',
+                padding:'4px 8px',
+                borderRadius:'6px',
+                cursor:'pointer',
+                color:'#60a5fa',
+                background:'rgba(96,165,250,0.1)',
+                border:'1px solid rgba(96,165,250,0.3)',
+              }}
+            >
+              ✨ AI 修正
+            </button>
+          )}
           <button onClick={handleExportTranscript} title="导出为 Markdown 文件" style={{fontSize:'10px',color:'#a78bfa',background:'rgba(167,139,250,0.1)',border:'1px solid rgba(167,139,250,0.25)',borderRadius:'6px',padding:'4px 8px',cursor:'pointer'}}>导出 MD</button>
           <button onClick={handleCopyTranscript} style={{fontSize:'10px',color:'rgba(255,255,255,0.4)',background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:'6px',padding:'4px 8px',cursor:'pointer'}}>复制</button>
         </div>
@@ -252,6 +357,7 @@ export function TranscriptPanel({ audioUrl }: TranscriptPanelProps) {
           currentMeeting.segments.map((seg, i) => {
             const isActive = activeSegment === i
             const isHover = hoverSegment === i
+            const diff = transcriptDiffs[currentMeeting.id]?.[i]  // 有 diff = 此段被 AI 改过
             return (
               <div
                 key={i}
@@ -261,8 +367,8 @@ export function TranscriptPanel({ audioUrl }: TranscriptPanelProps) {
                 onMouseLeave={() => setHoverSegment(-1)}
                 style={{
                   display:'flex',gap:'8px',marginBottom:'4px',padding:'8px 10px',borderRadius:'8px',cursor:'pointer',
-                  background: isActive ? 'rgba(249,115,22,0.15)' : (isHover ? 'rgba(249,115,22,0.08)' : 'transparent'),
-                  borderLeft: isActive ? '3px solid #f97316' : (isHover ? '3px solid rgba(249,115,22,0.4)' : '3px solid transparent'),
+                  background: isActive ? 'rgba(249,115,22,0.15)' : (diff ? 'rgba(239,68,68,0.06)' : (isHover ? 'rgba(249,115,22,0.08)' : 'transparent')),
+                  borderLeft: isActive ? '3px solid #f97316' : (diff ? '3px solid rgba(239,68,68,0.4)' : (isHover ? '3px solid rgba(249,115,22,0.4)' : '3px solid transparent')),
                   transition:'background 0.15s, border-color 0.15s',
                 }}
               >
@@ -281,8 +387,22 @@ export function TranscriptPanel({ audioUrl }: TranscriptPanelProps) {
                 </div>
                 {/* 文字 */}
                 <div style={{flex:1,minWidth:0}}>
-                  <div style={{marginBottom:'4px'}}><SpeakerChip speaker={seg.speaker} /></div>
-                  <p style={{color:isActive?'rgba(255,255,255,0.95)':(isHover?'rgba(255,255,255,0.85)':'rgba(255,255,255,0.7)'),fontSize:'13px',margin:0,lineHeight:1.6}}>{seg.text}</p>
+                  <div style={{display:'flex',alignItems:'center',gap:'6px',marginBottom:'4px'}}>
+                    <SpeakerChip speaker={seg.speaker} />
+                    {diff && (
+                      <span style={{fontSize:'9px',color:'#fca5a5',background:'rgba(239,68,68,0.15)',padding:'1px 6px',borderRadius:'99px',border:'1px solid rgba(239,68,68,0.3)'}}>AI 改</span>
+                    )}
+                  </div>
+                  {diff ? (
+                    <div style={{fontSize:'13px',lineHeight:1.7}}>
+                      {/* 旧文本：红色 + 删除线 */}
+                      <p style={{color:'#fca5a5',textDecoration:'line-through',textDecorationColor:'rgba(239,68,68,0.7)',margin:'0 0 4px 0',opacity:0.85}}>{diff.old}</p>
+                      {/* 新文本：高亮绿色 */}
+                      <p style={{color:isActive?'rgba(255,255,255,0.95)':'#86efac',margin:0}}>{seg.text}</p>
+                    </div>
+                  ) : (
+                    <p style={{color:isActive?'rgba(255,255,255,0.95)':(isHover?'rgba(255,255,255,0.85)':'rgba(255,255,255,0.7)'),fontSize:'13px',margin:0,lineHeight:1.6}}>{seg.text}</p>
+                  )}
                 </div>
               </div>
             )

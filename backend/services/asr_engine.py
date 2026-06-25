@@ -1,4 +1,5 @@
 import logging
+import threading
 from typing import Optional
 from funasr import AutoModel
 from funasr.utils.postprocess_utils import rich_transcription_postprocess
@@ -6,6 +7,7 @@ from funasr.utils.postprocess_utils import rich_transcription_postprocess
 logger = logging.getLogger(__name__)
 
 _engine: Optional["ASREngine"] = None
+_engine_lock = threading.Lock()
 
 # 支持的 ASR 模型
 ASR_MODELS = {
@@ -32,47 +34,56 @@ class ASREngine:
         self.model = None
         self.loaded = False
         self.current_model_key = ""
+        self._load_lock = threading.Lock()
 
     def load(self, device: str = "mps", hotwords: str = "", model_key: str = "sensevoice"):
+        # 双重检查 + 锁，避免并发重复加载（chunk ASR + full ASR 同时进来）
         if self.loaded and self.current_model_key == model_key:
             return
+        with self._load_lock:
+            if self.loaded and self.current_model_key == model_key:
+                return
+            logger.info("开始加载 ASR 模型: %s (device=%s)", model_key, device)
 
-        config = ASR_MODELS.get(model_key, ASR_MODELS["sensevoice"])
-        try:
-            kwargs = {
-                "model": config["model"],
-                "vad_model": "iic/speech_fsmn_vad_zh-cn-16k-common-pytorch",
-                "vad_kwargs": {"max_single_segment_time": 30000},
-                "device": device,
-                "hub": "ms",
-            }
-            if config["need_punc"]:
-                kwargs["punc_model"] = "iic/ct-punc"
-            else:
-                kwargs["spk_model"] = "cam++"
+            config = ASR_MODELS.get(model_key, ASR_MODELS["sensevoice"])
+            try:
+                kwargs = {
+                    "model": config["model"],
+                    "vad_model": "iic/speech_fsmn_vad_zh-cn-16k-common-pytorch",
+                    "vad_kwargs": {"max_single_segment_time": 30000},
+                    "device": device,
+                    "hub": "ms",
+                    "disable_update": True,
+                }
+                if config["need_punc"]:
+                    kwargs["punc_model"] = "iic/ct-punc"
+                else:
+                    kwargs["spk_model"] = "cam++"
 
-            self.model = AutoModel(**kwargs)
-            self.loaded = True
-            self.current_model_key = model_key
-            logger.info(f"ASR 模型加载完成: {config['name']} (device={device})")
-        except Exception as e:
-            if device == "mps":
-                logger.warning(f"MPS 加载失败，回退到 CPU: {e}")
-                self.load(device="cpu", hotwords=hotwords, model_key=model_key)
-            else:
-                raise
+                self.model = AutoModel(**kwargs)
+                self.loaded = True
+                self.current_model_key = model_key
+                logger.info("ASR 模型加载完成: %s (device=%s)", config["name"], device)
+            except Exception as e:
+                if device == "mps":
+                    logger.warning(f"MPS 加载失败，回退到 CPU: {e}")
+                    self.load(device="cpu", hotwords=hotwords, model_key=model_key)
+                else:
+                    raise
 
     def transcribe(self, audio_path: str, hotwords: str = "", on_segment=None, model_key: str = "sensevoice") -> dict:
-        if not self.loaded or self.current_model_key != model_key:
-            self.load(model_key=model_key)
-
-        result = self.model.generate(
-            input=audio_path,
-            batch_size_s=300,
-            hotword=hotwords if hotwords else None,
-            merge_vad=True,
-            merge_length_s=15,
-        )
+        # 用锁串行 transcribe 调用：FunASR AutoModel 不是线程安全的，
+        # 并发调用会导致 torch forward 互相阻塞、模型状态错乱
+        with _engine_lock:
+            if not self.loaded or self.current_model_key != model_key:
+                self.load(model_key=model_key)
+            result = self.model.generate(
+                input=audio_path,
+                batch_size_s=300,
+                hotword=hotwords if hotwords else None,
+                merge_vad=True,
+                merge_length_s=15,
+            )
 
         return self._format_result(result, on_segment)
 

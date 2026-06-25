@@ -1,6 +1,8 @@
 import uuid
 import asyncio
 import shutil
+import logging
+import traceback
 from pathlib import Path
 from fastapi import APIRouter, UploadFile, File, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import FileResponse
@@ -9,6 +11,7 @@ from services.audio_processor import convert_to_wav, is_supported, get_audio_dur
 from db.database import get_db, get_setting
 
 router = APIRouter()
+logger = logging.getLogger("meeting-minutes.transcribe")
 
 DATA_DIR = Path.home() / "Library" / "Application Support" / "meeting-minutes-assistant" / "audio"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -26,6 +29,88 @@ async def get_audio_file(job_id: str, filename: str):
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="文件不存在")
     return FileResponse(str(file_path))
+
+
+@router.delete("/meetings/{meeting_id}")
+async def delete_meeting(meeting_id: str):
+    """删除会议：数据库记录 + 聊天记录 + 音频文件"""
+    db = await get_db()
+    await db.execute("DELETE FROM chat_history WHERE meeting_id = ?", (meeting_id,))
+    await db.execute("DELETE FROM meetings WHERE id = ?", (meeting_id,))
+    await db.commit()
+    await db.close()
+    audio_dir = DATA_DIR / meeting_id
+    if audio_dir.exists():
+        shutil.rmtree(audio_dir, ignore_errors=True)
+    _jobs.pop(meeting_id, None)
+    return {"success": True}
+
+
+@router.patch("/meetings/{meeting_id}")
+async def rename_meeting(meeting_id: str, payload: dict = {}):
+    """重命名会议（更新 filename 字段）"""
+    new_name = (payload.get("filename") or "").strip()
+    if not new_name:
+        return {"success": False, "message": "文件名不能为空"}
+    db = await get_db()
+    cursor = await db.execute("SELECT id, filename FROM meetings WHERE id = ?", (meeting_id,))
+    row = await cursor.fetchone()
+    if not row:
+        await db.close()
+        return {"success": False, "message": "会议不存在"}
+    old_filename = row["filename"] or ""
+    # 没显式给扩展名时，沿用旧扩展名
+    if "." not in Path(new_name).name and "." in old_filename:
+        new_name = new_name + Path(old_filename).suffix
+    await db.execute("UPDATE meetings SET filename = ?, updated_at = datetime('now') WHERE id = ?", (new_name, meeting_id))
+    await db.commit()
+    await db.close()
+    return {"success": True, "filename": new_name}
+
+
+@router.delete("/meetings/{meeting_id}/chat")
+async def clear_chat(meeting_id: str):
+    """清空某次会议的对话历史（用于"重生成"前重置）"""
+    db = await get_db()
+    await db.execute("DELETE FROM chat_history WHERE meeting_id = ?", (meeting_id,))
+    await db.commit()
+    await db.close()
+    return {"success": True}
+
+
+@router.put("/meetings/{meeting_id}/state")
+async def update_meeting_state(meeting_id: str, payload: dict = {}):
+    """通用保存：segments / transcript / minutes 任意组合。
+    segments 接收数组，存为 JSON 字符串。
+    """
+    db = await get_db()
+    cursor = await db.execute("SELECT id FROM meetings WHERE id = ?", (meeting_id,))
+    if not await cursor.fetchone():
+        await db.close()
+        return {"success": False, "message": "会议不存在"}
+
+    import json as _json
+    sets: list[str] = []
+    params: list = []
+    if "segments" in payload:
+        sets.append("segments = ?")
+        params.append(_json.dumps(payload["segments"], ensure_ascii=False))
+    if "transcript" in payload:
+        sets.append("transcript = ?")
+        params.append(payload["transcript"])
+    if "minutes" in payload:
+        sets.append("minutes = ?")
+        params.append(payload["minutes"])
+    if not sets:
+        await db.close()
+        return {"success": False, "message": "无可更新字段"}
+
+    sets.append("updated_at = datetime('now')")
+    params.append(meeting_id)
+    await db.execute(f"UPDATE meetings SET {', '.join(sets)} WHERE id = ?", params)
+    await db.commit()
+    await db.close()
+    return {"success": True}
 
 
 @router.post("/transcribe")
@@ -105,6 +190,7 @@ async def ws_transcribe(websocket: WebSocket, job_id: str):
 
 
 async def _run_transcription(job_id: str, audio_path: str, asr_model: str = "sensevoice"):
+    logger.info("开始转录 job=%s file=%s model=%s", job_id, audio_path, asr_model)
     job = _jobs[job_id]
     job["status"] = "processing"
     job["progress"] = 0.1
@@ -112,6 +198,7 @@ async def _run_transcription(job_id: str, audio_path: str, asr_model: str = "sen
     try:
         job["progress"] = 0.2
         wav_path = await asyncio.to_thread(convert_to_wav, audio_path)
+        logger.info("ffmpeg 转码完成 job=%s -> %s", job_id, wav_path)
 
         job["progress"] = 0.3
         duration = await asyncio.to_thread(get_audio_duration, audio_path)
@@ -128,15 +215,17 @@ async def _run_transcription(job_id: str, audio_path: str, asr_model: str = "sen
             job["progress"] = 0.4 + 0.55 * ((idx + 1) / total)
 
         result = await asyncio.to_thread(engine.transcribe, wav_path, hotwords_str, on_segment, asr_model)
+        logger.info("ASR 完成 job=%s, segments=%d, chars=%d", job_id, len(result.get("segments", [])), len(result.get("full_text", "")))
 
         job["status"] = "completed"
         job["progress"] = 1.0
         job["result"] = result
 
+        import json as _json
         db = await get_db()
         await db.execute(
-            "INSERT INTO meetings (id, filename, audio_path, transcript, duration) VALUES (?, ?, ?, ?, ?)",
-            (job_id, job["filename"], audio_path, result["full_text"], duration),
+            "INSERT INTO meetings (id, filename, audio_path, transcript, segments, duration) VALUES (?, ?, ?, ?, ?, ?)",
+            (job_id, job["filename"], audio_path, result["full_text"], _json.dumps(result.get("segments", [])), duration),
         )
         await db.commit()
         await db.close()
@@ -144,3 +233,5 @@ async def _run_transcription(job_id: str, audio_path: str, asr_model: str = "sen
     except Exception as e:
         job["status"] = "error"
         job["error"] = str(e)
+        logger.error("转录失败 job=%s file=%s: %s", job_id, job.get("filename", "?"), e)
+        logger.error(traceback.format_exc())
