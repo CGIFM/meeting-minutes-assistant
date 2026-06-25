@@ -121,7 +121,7 @@ export function TranscriptPanel({ audioUrl }: TranscriptPanelProps) {
     else audio.pause()
   }
 
-  // 进度条点击/拖动
+  // 进度条点击/拖动（用 document 监听，避免 pointer capture 锁定全局事件）
   const getRatio = (clientX: number) => {
     const el = progressRef.current
     if (!el) return 0
@@ -131,23 +131,22 @@ export function TranscriptPanel({ audioUrl }: TranscriptPanelProps) {
 
   const onProgressDown = (e: React.PointerEvent) => {
     e.preventDefault()
+    const ratio = getRatio(e.clientX)
+    seekTo(ratio)
     setDragging(true)
-    const ratio = getRatio(e.clientX)
-    seekTo(ratio)
-    ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
-  }
 
-  const onProgressMove = (e: React.PointerEvent) => {
-    if (!dragging) return
-    const ratio = getRatio(e.clientX)
-    setCurrentTime(ratio * (duration || 0))
-    seekTo(ratio)
-  }
-
-  const onProgressUp = (e: React.PointerEvent) => {
-    if (!dragging) return
-    setDragging(false)
-    seekTo(getRatio(e.clientX))
+    const onMove = (ev: PointerEvent) => {
+      const r = getRatio(ev.clientX)
+      setCurrentTime(r * (duration || 0))
+      seekTo(r)
+    }
+    const onUp = () => {
+      setDragging(false)
+      document.removeEventListener('pointermove', onMove)
+      document.removeEventListener('pointerup', onUp)
+    }
+    document.addEventListener('pointermove', onMove)
+    document.addEventListener('pointerup', onUp)
   }
 
   const playhead = duration > 0 ? currentTime / duration : 0
@@ -189,8 +188,6 @@ export function TranscriptPanel({ audioUrl }: TranscriptPanelProps) {
               <div
                 ref={progressRef}
                 onPointerDown={onProgressDown}
-                onPointerMove={onProgressMove}
-                onPointerUp={onProgressUp}
                 style={{height:'6px',background:'rgba(255,255,255,0.12)',borderRadius:'3px',cursor:'pointer',position:'relative',touchAction:'none'}}
               >
                 <div style={{height:'100%',background:'linear-gradient(90deg,#3b82f6,#8b5cf6)',borderRadius:'3px',width:`${playhead*100}%`,pointerEvents:'none'}} />

@@ -33,7 +33,7 @@ export function Sidebar({ onFileDrop }: SidebarProps) {
   }
 
   return (
-    <aside style={{width:'220px',display:'flex',flexDirection:'column',height:'100%',background:'#0f0f12',borderRight:'1px solid rgba(255,255,255,0.05)'}}>
+    <aside style={{width:'220px',display:'flex',flexDirection:'column',height:'100%',background:'#0f0f12',borderRight:'1px solid rgba(255,255,255,0.05)',position:'relative',zIndex:10,flexShrink:0}}>
       {/* Drag Region + Title */}
       <div style={{padding:'20px 16px 14px',WebkitAppRegion:'drag'} as any}>
         <div style={{display:'flex',alignItems:'center',gap:'8px',paddingLeft:'60px'}}>
