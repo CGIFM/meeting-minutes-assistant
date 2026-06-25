@@ -1,3 +1,4 @@
+import { toast } from '../services/toast'
 import { useState, useRef, useEffect } from 'react'
 import { ObsidianMarkdown } from './ObsidianMarkdown'
 import { useAppStore } from '../stores/appStore'
@@ -70,7 +71,7 @@ export function MinutesPanel({ onChat, onRegenerate }: MinutesPanelProps) {
       const ctype = resp.headers.get('content-type') || ''
       if (ctype.includes('application/json')) {
         const result = await resp.json()
-        alert(result.message || (result.success ? '导出成功' : '导出失败'))
+        toast(result.message || (result.success ? '导出成功' : '导出失败'), result.success ? 'success' : 'error')
       } else {
         const blob = await resp.blob()
         const url = URL.createObjectURL(blob)
@@ -81,7 +82,7 @@ export function MinutesPanel({ onChat, onRegenerate }: MinutesPanelProps) {
         URL.revokeObjectURL(url)
       }
     } catch (e: any) {
-      alert(`导出失败: ${e.message}`)
+      toast(`导出失败: ${e.message}`, 'error')
     }
   }
 
@@ -108,7 +109,7 @@ export function MinutesPanel({ onChat, onRegenerate }: MinutesPanelProps) {
         URL.revokeObjectURL(url)
       })
     } catch (e: any) {
-      alert(`图片导出失败: ${e.message}`)
+      toast(`图片导出失败: ${e.message}`, 'error')
     }
   }
 

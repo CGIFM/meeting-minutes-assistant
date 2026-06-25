@@ -1,3 +1,4 @@
+import { toast } from './services/toast'
 import { useState, useCallback } from 'react'
 import { useAppStore } from './stores/appStore'
 import { Sidebar } from './components/Sidebar'
@@ -46,11 +47,11 @@ export default function App() {
           setPendingMeetingId(job_id)
           setShowGenerateDialog(true)
         },
-        (error) => { store.setTranscribing(false); alert(`转录失败: ${error}`) },
+        (error) => { store.setTranscribing(false); toast(`转录失败: ${error}`, 'error') },
       )
     } catch (e: any) {
       store.setTranscribing(false)
-      alert(`上传失败: ${e.message}`)
+      toast(`上传失败: ${e.message}`, 'error')
     }
   }, [store])
 
@@ -77,7 +78,7 @@ export default function App() {
         store.updateMeeting(pendingMeetingId, { minutes: data.full_content })
       } else if (data.type === 'error') {
         store.setGenerating(false)
-        alert(`生成失败: ${data.message}`)
+        toast(`生成失败: ${data.message}`, 'error')
       }
     })
 

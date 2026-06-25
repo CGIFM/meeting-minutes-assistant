@@ -1,3 +1,4 @@
+import { toast } from '../services/toast'
 import { useState, useEffect } from 'react'
 import { useAppStore } from '../stores/appStore'
 import { getSettings, updateSettings, updateApiKey, getApiKeys, BACKEND_PORT } from '../services/api'
@@ -54,7 +55,7 @@ export function SettingsModal() {
         const keys = await getApiKeys()
         setApiKeys(keys)
       } else {
-        alert(result.message)
+        toast(result.message, result.success ? 'success' : 'error')
       }
     } catch (e) {}
   }

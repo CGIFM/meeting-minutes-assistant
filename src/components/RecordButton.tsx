@@ -1,3 +1,4 @@
+import { toast } from '../services/toast'
 import { useState, useRef, useCallback } from 'react'
 import { useAppStore } from '../stores/appStore'
 
@@ -43,7 +44,7 @@ export function RecordButton({ onRecordingComplete }: RecordButtonProps) {
         setDuration(Math.floor((Date.now() - startTimeRef.current) / 1000))
       }, 1000)
     } catch (err) {
-      alert('无法访问麦克风，请在系统设置中授权')
+      toast('无法访问麦克风，请在系统设置中授权', 'error')
     }
   }, [onRecordingComplete])
 

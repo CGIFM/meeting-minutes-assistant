@@ -99,6 +99,21 @@ export function TranscriptPanel({ audioUrl }: TranscriptPanelProps) {
     navigator.clipboard.writeText(text)
   }
 
+  const handleExportTranscript = () => {
+    const header = `# ${currentMeeting.filename} - 转录记录\n\n> 导出时间：${new Date().toLocaleString('zh-CN')}\n\n`
+    const body = currentMeeting.segments.map(seg => `**[${formatTime(seg.start)}] ${seg.speaker}:** ${seg.text}`).join('\n\n')
+    const content = header + body + '\n'
+    const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${currentMeeting.filename.replace(/\.[^.]+$/, '')}_转录.md`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
   const seekTo = useCallback((ratio: number) => {
     const audio = audioRef.current
     if (!audio || !audio.duration || !Number.isFinite(audio.duration)) return
@@ -199,7 +214,7 @@ export function TranscriptPanel({ audioUrl }: TranscriptPanelProps) {
               </div>
             </div>
           </div>
-          <audio ref={audioRef} src={audioUrl} preload="metadata" style={{display:'none'}} />
+          <audio ref={audioRef} src={audioUrl} preload="none" style={{display:'none',pointerEvents:'none'}} />
         </div>
       )}
 
@@ -209,7 +224,10 @@ export function TranscriptPanel({ audioUrl }: TranscriptPanelProps) {
           <h2 style={{fontSize:'11px',fontWeight:600,color:'rgba(255,255,255,0.5)',textTransform:'uppercase',letterSpacing:'0.05em',margin:0}}>转录结果</h2>
           <p style={{fontSize:'11px',color:'rgba(255,255,255,0.25)',margin:'4px 0 0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{currentMeeting.filename}</p>
         </div>
-        <button onClick={handleCopyTranscript} style={{fontSize:'10px',color:'rgba(255,255,255,0.4)',background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:'6px',padding:'4px 8px',cursor:'pointer',flexShrink:0}}>复制</button>
+        <div style={{display:'flex',gap:'4px',flexShrink:0}}>
+          <button onClick={handleExportTranscript} title="导出为 Markdown 文件" style={{fontSize:'10px',color:'#a78bfa',background:'rgba(167,139,250,0.1)',border:'1px solid rgba(167,139,250,0.25)',borderRadius:'6px',padding:'4px 8px',cursor:'pointer'}}>导出 MD</button>
+          <button onClick={handleCopyTranscript} style={{fontSize:'10px',color:'rgba(255,255,255,0.4)',background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:'6px',padding:'4px 8px',cursor:'pointer'}}>复制</button>
+        </div>
       </div>
 
       {/* Speaker Tags */}
