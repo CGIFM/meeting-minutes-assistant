@@ -1,6 +1,6 @@
 import json
 from pathlib import Path as _Path
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException
 from pydantic import BaseModel
 from services.llm_provider import create_provider
 from services.prompt_templates import DEFAULT_MEETING_MINUTES_PROMPT
@@ -61,6 +61,74 @@ class SummarizeRequest(BaseModel):
     provider: str = "claude"
     model: str = ""
     custom_prompt: str = ""
+
+
+class GenerateTitleRequest(BaseModel):
+    meeting_id: str
+    provider: str = "claude"
+    model: str = ""
+    force: bool = False  # 强制重生（即使已有标题）
+
+
+def _looks_default_filename(filename: str) -> bool:
+    """判断文件名是否像默认值（录音_xxx / UUID / 纯标识符）—— 不像就保留用户起的名"""
+    base = _Path(filename or "").stem
+    if not base:
+        return True
+    return (
+        base.startswith("录音_")
+        or base.startswith("test_")
+        or base.startswith("audio_")
+        or len(base) >= 32  # UUID 长度
+        or base.replace("_", "").replace("-", "").isalnum()  # 纯标识符
+    )
+
+
+@router.post("/generate-title")
+async def generate_title_api(req: GenerateTitleRequest):
+    """根据转录内容让 LLM 起一个简短标题。
+    force=False 时，如果文件名看起来已是用户起的具体名字，跳过。
+    """
+    db = await get_db()
+    cur = await db.execute("SELECT transcript, filename FROM meetings WHERE id = ?", (req.meeting_id,))
+    row = await cur.fetchone()
+    await db.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="会议不存在")
+
+    transcript = row["transcript"] or ""
+    filename = row["filename"] or ""
+
+    if not req.force and not _looks_default_filename(filename):
+        return {"title": filename, "skipped": True, "reason": "已有自定义标题"}
+
+    if not transcript.strip():
+        raise HTTPException(status_code=400, detail="转录内容为空")
+
+    api_key = await get_setting(f"apikey_{req.provider}", "")
+    base_url = await get_setting(f"baseurl_{req.provider}", "")
+    if not api_key and req.provider != "ollama":
+        raise HTTPException(status_code=400, detail=f"请先配置 {req.provider} 的 API Key")
+
+    try:
+        provider = create_provider(req.provider, api_key, base_url)
+        title = await _generate_title(provider, transcript, req.model)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"标题生成失败: {e}")
+
+    if not title:
+        return {"title": filename, "skipped": True, "reason": "生成结果为空"}
+
+    ext = _Path(filename).suffix
+    new_filename = f"{title}{ext}"
+    db = await get_db()
+    await db.execute(
+        "UPDATE meetings SET filename = ?, updated_at = datetime('now') WHERE id = ?",
+        (new_filename, req.meeting_id),
+    )
+    await db.commit()
+    await db.close()
+    return {"title": new_filename, "applied": True}
 
 
 @router.websocket("/ws/chat")

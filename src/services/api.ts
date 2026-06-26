@@ -87,6 +87,23 @@ export async function clearChatHistory(id: string) {
   return res.json()
 }
 
+export async function generateMeetingTitle(id: string, provider: string = 'claude', model: string = '', force: boolean = false): Promise<{ title: string; applied?: boolean; skipped?: boolean; reason?: string; detail?: string }> {
+  try {
+    const res = await fetch(`${BASE_URL()}/api/generate-title`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ meeting_id: id, provider, model, force }),
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      return { title: '', detail: err.detail || `HTTP ${res.status}` }
+    }
+    return await res.json()
+  } catch (e: any) {
+    return { title: '', detail: e?.message || String(e) }
+  }
+}
+
 // === 实时录音 API ===
 
 export async function recordStart(): Promise<{ job_id: string }> {

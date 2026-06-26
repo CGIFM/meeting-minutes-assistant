@@ -12,7 +12,7 @@ import { Onboarding } from './components/Onboarding'
 import { AsrModelDialog } from './components/AsrModelDialog'
 import { FixTranscriptDialog } from './components/FixTranscriptDialog'
 import { RecordingPanel } from './components/RecordingPanel'
-import { uploadAudio, getApiKeys, getMeetings, getMeeting, clearChatHistory, BACKEND_PORT } from './services/api'
+import { uploadAudio, getApiKeys, getMeetings, getMeeting, clearChatHistory, generateMeetingTitle, BACKEND_PORT } from './services/api'
 import { connectTranscribeWS, ChatWebSocket } from './services/websocket'
 import { buildTranscriptBody, buildTranscriptMd, parseTranscriptMd, formatTime as formatTimeMd } from './services/transcriptDoc'
 
@@ -50,6 +50,13 @@ export default function App() {
           store.updateMeeting(job_id, { transcript: result.full_text, segments: result.segments })
           setPendingMeetingId(job_id)
           setShowGenerateDialog(true)
+          // 自动起标题：后端只在文件名是默认值（录音_/UUID 等）时才改，不会覆盖用户起的名
+          const s = useAppStore.getState().settings
+          generateMeetingTitle(job_id, s.default_provider, s.default_model).then((r) => {
+            if (r.applied && r.title) {
+              useAppStore.getState().updateMeeting(job_id, { filename: r.title })
+            }
+          }).catch(() => {})
         },
         (error) => { store.setTranscribing(false); toast(`转录失败: ${error}`, 'error') },
       )
@@ -225,34 +232,57 @@ export default function App() {
           return
         }
 
-        // 智能合并：保留原 segments 的时间戳（AI 可能微调过），按"位置"对齐
-        // 如果段数匹配，按索引保留 start/end；否则按解析结果（start 用 AI 给的）
-        const merged = newSegments.map((seg, i) => {
-          const orig = m.segments[i]
-          if (orig) {
-            return { ...seg, start: orig.start, end: orig.end }
+        // 智能合并：按"时间戳最近"匹配原段，AI 合并/拆分段也不会错位
+        // diff 严格按原 segments 索引记录，前端渲染 segments[i] 查 diff[i] 一定对得上
+        const origSegs = m.segments
+        const newUsed = new Array(newSegments.length).fill(false)
+        const diffs: Record<number, { old: string; new: string }> = {}
+        const merged: typeof origSegs = []
+
+        for (let i = 0; i < origSegs.length; i++) {
+          const orig = origSegs[i]
+          // 在 newSegments 里找时间戳最近的、未被匹配过的
+          let bestIdx = -1
+          let bestDelta = Infinity
+          for (let j = 0; j < newSegments.length; j++) {
+            if (newUsed[j]) continue
+            const delta = Math.abs(newSegments[j].start - orig.start)
+            if (delta < bestDelta) {
+              bestDelta = delta
+              bestIdx = j
+            }
           }
-          return seg
-        })
+          // 5 秒阈值内认为是同一段
+          if (bestIdx >= 0 && bestDelta <= 5) {
+            newUsed[bestIdx] = true
+            const newSeg = newSegments[bestIdx]
+            // 保留原段的时间戳和说话人，只换文本（避免 AI 误改说话人）
+            merged.push({ ...orig, text: newSeg.text })
+            if ((orig.text || '') !== newSeg.text) {
+              diffs[i] = { old: orig.text || '', new: newSeg.text }
+            }
+          } else {
+            // AI 漏了这段，保留原样（不记 diff）
+            merged.push(orig)
+          }
+        }
+
+        // AI 多输出的段（罕见，比如把一段拆两段）：append 到末尾
+        for (let j = 0; j < newSegments.length; j++) {
+          if (!newUsed[j]) {
+            merged.push(newSegments[j])
+          }
+        }
 
         // 更新 segments + transcript（同时更新，保持一致）
         const newTranscript = merged
           .map(s => `[${formatTimeMd(s.start)}] ${s.speaker}: ${s.text}`)
           .join('\n')
-        // 计算 diff：对比修正前 (snapshot) 和修正后 (merged)，记录文本不同的段
-        const diffs: Record<number, { old: string; new: string }> = {}
-        const origTexts = snapshot.map(s => s.text || '')
-        merged.forEach((seg, i) => {
-          const oldText = origTexts[i] || ''
-          if (oldText && oldText !== seg.text) {
-            diffs[i] = { old: oldText, new: seg.text }
-          }
-        })
         cur.updateMeeting(meeting.id, { segments: merged, transcript: newTranscript })
         cur.setTranscriptDiffs(meeting.id, diffs)
         cur.setGenerating(false)
         const changedCount = Object.keys(diffs).length
-        toast(`已修正 ${merged.length} 段（${changedCount} 段有改动，红色标注，可点"撤回"恢复）`, 'success')
+        toast(`已修正 ${changedCount} 段（红色标注）。审完后点 "✓ 确认修正" 清掉高亮，或 "↶ 撤回" ���复`, 'success')
       } else if (data.type === 'error') {
         // 出错时也回滚 undo 栈
         state.popTranscriptUndo(meeting.id)

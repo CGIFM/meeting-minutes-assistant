@@ -1,7 +1,7 @@
 import { useCallback, useState, useEffect, useRef } from 'react'
 import { useAppStore } from '../stores/appStore'
 import { RecordButton } from './RecordButton'
-import { deleteMeeting, renameMeeting, saveMeetingState } from '../services/api'
+import { deleteMeeting, renameMeeting, saveMeetingState, generateMeetingTitle } from '../services/api'
 import { toast } from '../services/toast'
 
 interface SidebarProps {
@@ -132,6 +132,27 @@ export function Sidebar({ onFileDrop }: SidebarProps) {
     setRenamingId(null)
   }
 
+  const [titlingId, setTitlingId] = useState<string | null>(null)
+  const handleAiTitle = async (id: string) => {
+    const s = useAppStore.getState().settings
+    setTitlingId(id)
+    try {
+      const r = await generateMeetingTitle(id, s.default_provider, s.default_model, true)  // force=true 强制重生
+      if (r.applied && r.title) {
+        useAppStore.getState().updateMeeting(id, { filename: r.title })
+        toast(`已起标题: ${r.title.replace(/\.[^.]+$/, '')}`, 'success')
+      } else if (r.detail) {
+        toast(`起标题失败: ${r.detail}`, 'error')
+      } else if (r.skipped) {
+        toast('已跳过（保留当前标题）', 'info')
+      }
+    } catch (e: any) {
+      toast(`起标题失败: ${e.message}`, 'error')
+    } finally {
+      setTitlingId(null)
+    }
+  }
+
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr)
     return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${d.getMinutes().toString().padStart(2, '0')}`
@@ -225,13 +246,13 @@ export function Sidebar({ onFileDrop }: SidebarProps) {
                 }}
                 onMouseEnter={(e) => {
                   if (!selectMode && !isRenaming) {
-                    const btn = (e.currentTarget.querySelector('[data-rename]') as HTMLElement)
-                    if (btn) btn.style.opacity = '1'
+                    const btns = e.currentTarget.querySelectorAll('[data-rename], [data-aititle]')
+                    btns.forEach((b) => ((b as HTMLElement).style.opacity = '1'))
                   }
                 }}
                 onMouseLeave={(e) => {
-                  const btn = (e.currentTarget.querySelector('[data-rename]') as HTMLElement)
-                  if (btn) btn.style.opacity = '0'
+                  const btns = e.currentTarget.querySelectorAll('[data-rename], [data-aititle]')
+                  btns.forEach((b) => ((b as HTMLElement).style.opacity = '0'))
                 }}
                 style={{
                   position:'relative',
@@ -287,19 +308,44 @@ export function Sidebar({ onFileDrop }: SidebarProps) {
 
                 {/* 重命名按钮（hover 显示） */}
                 {!selectMode && !isRenaming && (
-                  <button
-                    data-rename="1"
-                    onClick={(e) => { e.stopPropagation(); startRename(meeting.id, meeting.filename) }}
-                    title="重命名"
-                    style={{
-                      opacity:0,flexShrink:0,padding:'2px',background:'rgba(255,255,255,0.06)',
-                      border:'1px solid rgba(255,255,255,0.08)',borderRadius:'4px',cursor:'pointer',
-                      color:'rgba(255,255,255,0.5)',display:'flex',alignItems:'center',justifyContent:'center',
-                      transition:'opacity 0.15s',
-                    }}
-                  >
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-                  </button>
+                  <div style={{display:'flex',gap:'3px',flexShrink:0}}>
+                    <button
+                      data-aititle="1"
+                      onClick={(e) => { e.stopPropagation(); handleAiTitle(meeting.id) }}
+                      disabled={titlingId === meeting.id}
+                      title={titlingId === meeting.id ? "正在生成标题..." : "AI 起标题"}
+                      style={{
+                        opacity:0,padding:'2px',background:'rgba(96,165,250,0.1)',
+                        border:'1px solid rgba(96,165,250,0.25)',borderRadius:'4px',
+                        cursor: titlingId === meeting.id ? 'wait' : 'pointer',
+                        color:'#93c5fd',display:'flex',alignItems:'center',justifyContent:'center',
+                        transition:'opacity 0.15s',
+                      }}
+                    >
+                      {titlingId === meeting.id ? (
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{animation:'spin 1s linear infinite'}}>
+                          <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                        </svg>
+                      ) : (
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4-6.2-4.6L6 21.3l2.4-7.4L2 9.4h7.6z"/>
+                        </svg>
+                      )}
+                    </button>
+                    <button
+                      data-rename="1"
+                      onClick={(e) => { e.stopPropagation(); startRename(meeting.id, meeting.filename) }}
+                      title="重命名"
+                      style={{
+                        opacity:0,padding:'2px',background:'rgba(255,255,255,0.06)',
+                        border:'1px solid rgba(255,255,255,0.08)',borderRadius:'4px',cursor:'pointer',
+                        color:'rgba(255,255,255,0.5)',display:'flex',alignItems:'center',justifyContent:'center',
+                        transition:'opacity 0.15s',
+                      }}
+                    >
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                    </button>
+                  </div>
                 )}
               </div>
             )
@@ -348,6 +394,8 @@ export function Sidebar({ onFileDrop }: SidebarProps) {
           </button>
         </div>
       )}
+      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
     </aside>
   )
 }
+

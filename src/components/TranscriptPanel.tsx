@@ -11,7 +11,7 @@ interface TranscriptPanelProps {
 }
 
 export function TranscriptPanel({ audioUrl, onFixTranscript, onUndoFix, canUndoFix }: TranscriptPanelProps) {
-  const { currentMeeting, updateMeeting, transcriptDiffs } = useAppStore()
+  const { currentMeeting, updateMeeting, transcriptDiffs, clearTranscriptDiffs } = useAppStore()
   const [editingSpeaker, setEditingSpeaker] = useState<string | null>(null)
   const [newName, setNewName] = useState('')
   const [currentTime, setCurrentTime] = useState(0)
@@ -311,6 +311,23 @@ export function TranscriptPanel({ audioUrl, onFixTranscript, onUndoFix, canUndoF
               }}
             >
               ↶ 撤回
+            </button>
+          )}
+          {onFixTranscript && currentMeeting && currentMeeting.segments.length > 0 && Object.keys(transcriptDiffs[currentMeeting.id] || {}).length > 0 && (
+            <button
+              onClick={() => clearTranscriptDiffs(currentMeeting.id)}
+              title="我看完了，清掉所有红色标注（保留新文本）"
+              style={{
+                fontSize:'10px',
+                padding:'4px 8px',
+                borderRadius:'6px',
+                cursor:'pointer',
+                color:'#10b981',
+                background:'rgba(16,185,129,0.1)',
+                border:'1px solid rgba(16,185,129,0.35)',
+              }}
+            >
+              ✓ 确认修正
             </button>
           )}
           {onFixTranscript && currentMeeting && currentMeeting.segments.length > 0 && (
