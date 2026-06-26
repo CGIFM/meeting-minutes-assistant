@@ -38,6 +38,14 @@ export function RecordingPanel({ onComplete }: RecordingPanelProps) {
 
   const [volume, setVolume] = useState(0)
   const [elapsedSec, setElapsedSec] = useState(0)
+  const transcriptEndRef = useRef<HTMLDivElement | null>(null)
+
+  // 新 segment 来时自动滚到底部
+  useEffect(() => {
+    if (liveSegments.length > 0) {
+      transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    }
+  }, [liveSegments.length])
 
   // 录音核心：开麦克风 → MediaRecorder（每段独立）→ 3 秒切一段上传
   const beginRecording = useCallback(async () => {
@@ -194,10 +202,10 @@ export function RecordingPanel({ onComplete }: RecordingPanelProps) {
     }
     mediaRecorderRef.current = mr
     mr.start()
-    // 3 秒后自动 stop
+    // 5 秒后自动 stop（chunk 越长 VAD 切得越准，但延迟越大；5 秒是平衡点）
     cycleTimerRef.current = window.setTimeout(() => {
       if (mr.state === 'recording') mr.stop()
-    }, 3000)
+    }, 5000)
   }, [])
 
   recordingStateRef.current = recordingState
@@ -353,7 +361,7 @@ export function RecordingPanel({ onComplete }: RecordingPanelProps) {
               {recordingState === 'idle' && '准备中'}
             </div>
             <div style={{fontSize:'11px',color:'rgba(255,255,255,0.35)',marginTop:'2px'}}>
-              {recordingState === 'recording' && '实时识别中（不带说话人），停止后将做完整说话人分离'}
+              {recordingState === 'recording' && `每 5 秒识别一次 · 已识别 ${liveSegments.length} 句`}
               {recordingState === 'paused' && '点击继续恢复录音'}
               {recordingState === 'processing' && '正在合并音频并跑完整 ASR，请稍候'}
             </div>
@@ -432,9 +440,11 @@ export function RecordingPanel({ onComplete }: RecordingPanelProps) {
                 </p>
               </>
             ) : (
+              /* 录音中但没有 segment：不转圈，显示静态提示 */
               <>
-                <div style={{width:'40px',height:'40px',border:'2px solid rgba(255,255,255,0.1)',borderTop:'2px solid #60a5fa',borderRadius:'50%',animation:'spin 1s linear infinite'}} />
-                <p style={{color:'rgba(255,255,255,0.3)',fontSize:'13px',margin:0}}>等待说话…</p>
+                <div style={{width:'48px',height:'48px',borderRadius:'50%',background:'rgba(239,68,68,0.08)',display:'flex',alignItems:'center',justifyContent:'center',color:'#ef4444',fontSize:'20px'}}>⏺</div>
+                <p style={{color:'rgba(255,255,255,0.45)',fontSize:'13px',margin:0}}>开始说话吧，识别后会逐句出现在这里</p>
+                <p style={{color:'rgba(255,255,255,0.25)',fontSize:'10px',margin:0}}>每 5 秒识别一次 · 停止后会做完整说话人分离</p>
               </>
             )}
           </div>
@@ -444,25 +454,21 @@ export function RecordingPanel({ onComplete }: RecordingPanelProps) {
               const isLast = i === liveSegments.length - 1 && recordingState === 'recording'
               return (
                 <div key={i} style={{
-                  marginBottom:'10px',padding:'10px 14px',borderRadius:'10px',
-                  background: isLast ? 'rgba(96,165,250,0.1)' : 'rgba(255,255,255,0.03)',
-                  borderLeft: isLast ? '3px solid #60a5fa' : '3px solid transparent',
-                  fontSize:'13px',lineHeight:1.7,
+                  marginBottom:'8px',padding:'8px 14px',borderRadius:'8px',
+                  background: isLast ? 'rgba(96,165,250,0.08)' : 'transparent',
+                  borderLeft: isLast ? '2px solid rgba(96,165,250,0.6)' : '2px solid transparent',
+                  fontSize:'14px',lineHeight:1.7,
                   color: isLast ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.7)',
                   transition:'background 0.2s',
                 }}>
-                  <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'4px'}}>
-                    <span style={{fontSize:'10px',color:'rgba(255,255,255,0.4)',fontFamily:'monospace'}}>{formatTime(seg.start)}</span>
-                    <span style={{fontSize:'10px',color:'#fbbf24'}}>{seg.speaker}</span>
-                    {isLast && <span style={{fontSize:'9px',color:'#60a5fa',background:'rgba(96,165,250,0.15)',padding:'1px 6px',borderRadius:'99px'}}>实时</span>}
-                  </div>
                   <p style={{margin:0}}>{seg.text}</p>
                 </div>
               )
             })}
-            <div style={{textAlign:'center',padding:'8px',fontSize:'10px',color:'rgba(255,255,255,0.2)'}}>
-              已识别 {liveSegments.length} 段 · {totalChars} 字
+            <div style={{textAlign:'center',padding:'8px',fontSize:'10px',color:'rgba(255,255,255,0.25)'}}>
+              已识别 {liveSegments.length} 句 · {totalChars} 字
             </div>
+            <div ref={transcriptEndRef} />
           </>
         )}
       </div>
@@ -493,7 +499,7 @@ export function RecordingPanel({ onComplete }: RecordingPanelProps) {
         {recordingState === 'processing' && (
           <div style={{display:'flex',alignItems:'center',gap:'10px',padding:'10px 20px',color:'rgba(255,255,255,0.6)',fontSize:'12px'}}>
             <div style={{width:'14px',height:'14px',border:'2px solid rgba(255,255,255,0.15)',borderTop:'2px solid #60a5fa',borderRadius:'50%',animation:'spin 1s linear infinite'}} />
-            正在生成完整转录（带说话人分离）...
+            正在合并 {liveSegments.length} 段录音，跑完整 ASR + 说话人分离...
           </div>
         )}
       </div>

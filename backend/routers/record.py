@@ -7,6 +7,7 @@
   3. POST /api/record/stop             → 标记结束，触发完整流水线（合并→转码→ASR+CAM++）
                                          → 完成后 ws 推送 {type: complete, result: ...}
 """
+import os
 import uuid
 import asyncio
 import shutil
@@ -16,7 +17,7 @@ import subprocess
 from pathlib import Path
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from services.asr_engine import get_engine
-from services.audio_processor import convert_to_wav, get_audio_duration
+from services.audio_processor import convert_to_wav, get_audio_duration, _find_ffmpeg
 from db.database import get_db
 import json as _json
 
@@ -103,9 +104,8 @@ async def _run_chunk_asr(job_id: str, chunk_path: str, chunk_index: int):
         wav_path = await asyncio.to_thread(convert_to_wav, chunk_path)
         engine = get_engine()
 
-        # 录音开始到这个 chunk 的累计秒数（近似：用已收到的 chunk 文件时长累加）
-        # 简化：用 chunks 已识别数量 × ~3 秒估算（后面完整流水线会给出真实时间戳）
-        offset_sec = chunk_index * 3.0
+        # 偏移 = 这个 chunk 在录音中的累计秒数（前端每 5 秒一段）
+        offset_sec = chunk_index * 5.0
 
         result = await asyncio.to_thread(engine.transcribe, wav_path, "", None, "sensevoice")
         segs = result.get("segments", [])
@@ -114,12 +114,23 @@ async def _run_chunk_asr(job_id: str, chunk_path: str, chunk_index: int):
         logger.info("chunk ASR 完成 job=%s idx=%d segments=%d chars=%d",
                     job_id, chunk_index, len(segs), len(result.get("full_text", "")))
 
-        for seg in segs:
-            seg["start"] = seg.get("start", 0) + offset_sec
-            seg["end"] = seg.get("end", 0) + offset_sec
-            # 标记为实时识别（无说话人）
-            seg["speaker"] = "识别中…"
-            t_job["segments_so_far"].append(seg)
+        # 如果 VAD 把整段切了多句，逐句推；否则整段推
+        if segs:
+            for seg in segs:
+                seg["start"] = seg.get("start", 0) + offset_sec
+                seg["end"] = seg.get("end", 0) + offset_sec
+                seg["speaker"] = "说话人?"  # 实时无说话人，停止后会替换
+                t_job["segments_so_far"].append(seg)
+        else:
+            # chunk 内有识别但 VAD 没切（或全是噪声）：把 full_text 作为一段
+            text = (result.get("full_text") or "").strip()
+            if text:
+                t_job["segments_so_far"].append({
+                    "start": offset_sec,
+                    "end": offset_sec + 5.0,
+                    "speaker": "说���人?",
+                    "text": text,
+                })
     except Exception as e:
         logger.warning("chunk ASR 失败 job=%s chunk=%d: %s", job_id, chunk_index, e)
         logger.warning(traceback.format_exc())
@@ -159,7 +170,7 @@ async def record_stop(job_id: str):
                 # ffmpeg concat demuxer 要求路径转义：'file' 部分单引号包裹
                 f.write(f"file '{cf.absolute()}'\n")
         cmd = [
-            "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+            _find_ffmpeg(), "-y", "-f", "concat", "-safe", "0",
             "-i", str(concat_list), "-c", "copy", str(full_webm),
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
