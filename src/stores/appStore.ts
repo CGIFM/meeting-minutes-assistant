@@ -72,6 +72,19 @@ interface AppState {
   setLiveSegments: (val: TranscriptSegment[]) => void
   appendLiveSegment: (seg: TranscriptSegment) => void
 
+  // 录音设备：可用输入设备列表 + 当前选中
+  audioInputs: MediaDeviceInfo[]
+  setAudioInputs: (devs: MediaDeviceInfo[]) => void
+  selectedMicId: string
+  setSelectedMicId: (id: string) => void
+
+  // 是否同时录制系统音频（在线会议场景）
+  recordSystemAudio: boolean
+  setRecordSystemAudio: (val: boolean) => void
+  // BlackHole 虚拟声卡的 deviceId（用作系统音频输入）
+  systemAudioDeviceId: string
+  setSystemAudioDeviceId: (val: string) => void
+
   // 保存状态
   dirtyIds: Set<string>
   saveStatus: 'idle' | 'saving' | 'saved'
@@ -188,6 +201,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   liveSegments: [],
   setLiveSegments: (val) => set({ liveSegments: val }),
   appendLiveSegment: (seg) => set((s) => ({ liveSegments: [...s.liveSegments, seg] })),
+  audioInputs: [],
+  setAudioInputs: (devs) => set({ audioInputs: devs }),
+  selectedMicId: '',
+  setSelectedMicId: (id) => set({ selectedMicId: id }),
+  recordSystemAudio: false,
+  setRecordSystemAudio: (val) => set({ recordSystemAudio: val }),
+  systemAudioDeviceId: '',
+  setSystemAudioDeviceId: (val) => set({ systemAudioDeviceId: val }),
   flushSave: async () => {
     const ids = Object.keys(saveQueue)
     if (ids.length === 0) {

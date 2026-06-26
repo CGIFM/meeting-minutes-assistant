@@ -109,6 +109,8 @@ async def _run_chunk_asr(job_id: str, chunk_path: str, chunk_index: int):
 
         result = await asyncio.to_thread(engine.transcribe, wav_path, "", None, "sensevoice")
         segs = result.get("segments", [])
+        # 过滤掉空内容段（VAD 有时切出无语音的 chunk）
+        segs = [s for s in segs if (s.get("text") or "").strip()]
         logger.info("chunk ASR 完成 job=%s idx=%d segments=%d chars=%d",
                     job_id, chunk_index, len(segs), len(result.get("full_text", "")))
 

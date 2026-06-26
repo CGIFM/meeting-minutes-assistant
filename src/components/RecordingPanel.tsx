@@ -16,10 +16,15 @@ export function RecordingPanel({ onComplete }: RecordingPanelProps) {
     setRecordingMode,
     liveSegments, setLiveSegments,
     addMeeting,
+    audioInputs, setAudioInputs,
+    selectedMicId, setSelectedMicId,
+    recordSystemAudio, setRecordSystemAudio,
+    systemAudioDeviceId, setSystemAudioDeviceId,
   } = useAppStore()
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const streamRef = useRef<MediaStream | null>(null)
+  const streamRef = useRef<MediaStream | null>(null)        // 最终录的流（merged 或 mic）
+  const allStreamsRef = useRef<MediaStream[]>([])            // 所有原始流，cleanup 时全停
   const audioCtxRef = useRef<AudioContext | null>(null)
   const analyserRef = useRef<AnalyserNode | null>(null)
   const chunkIndexRef = useRef<number>(0)
@@ -37,18 +42,57 @@ export function RecordingPanel({ onComplete }: RecordingPanelProps) {
   // 录音核心：开麦克风 → MediaRecorder（每段独立）→ 3 秒切一段上传
   const beginRecording = useCallback(async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 },
-      })
-      streamRef.current = stream
+      const state = useAppStore.getState()
+      const micId = state.selectedMicId
+      const audioConstraint: MediaTrackConstraints = {
+        echoCancellation: true,
+        noiseSuppression: true,
+        channelCount: 1,
+      }
+      if (micId) audioConstraint.deviceId = { exact: micId }
+      const micStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraint })
 
-      // 音量分析
-      const audioCtx = new AudioContext()
-      const source = audioCtx.createMediaStreamSource(stream)
+      // 系统音频（BlackHole）开启时，合并两路流
+      let finalStream: MediaStream = micStream
+      const sysId = state.systemAudioDeviceId
+      if (state.recordSystemAudio && sysId) {
+        try {
+          const sysStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              deviceId: { exact: sysId },
+              echoCancellation: false,  // 系统音频不需要降噪/回声消除
+              noiseSuppression: false,
+              channelCount: 2,
+            },
+          })
+          // 用 Web Audio API 混合两路
+          const mergeCtx = new AudioContext()
+          const dest = mergeCtx.createMediaStreamDestination()
+          const micSrc = mergeCtx.createMediaStreamSource(micStream)
+          const sysSrc = mergeCtx.createMediaStreamSource(sysStream)
+          micSrc.connect(dest)
+          sysSrc.connect(dest)
+          finalStream = dest.stream
+          // 保存引用，cleanup 时关闭
+          audioCtxRef.current = mergeCtx  // 复用现有 ref，cleanup 会 close 它
+          allStreamsRef.current.push(sysStream)
+          toast('已混合麦克风 + 系统音频', 'info')
+        } catch (e: any) {
+          console.warn('BlackHole stream failed, falling back to mic only:', e)
+          toast(`系统音频获取失败，仅录制麦克风: ${e.message}`, 'error')
+        }
+      }
+      const stream = finalStream
+      streamRef.current = stream
+      allStreamsRef.current = [micStream]
+
+      // 音量分析（基于麦克风原始流）
+      const audioCtx = audioCtxRef.current ?? new AudioContext()
+      if (!audioCtxRef.current) audioCtxRef.current = audioCtx
+      const source = audioCtx.createMediaStreamSource(micStream)
       const analyser = audioCtx.createAnalyser()
       analyser.fftSize = 256
       source.connect(analyser)
-      audioCtxRef.current = audioCtx
       analyserRef.current = analyser
 
       const tickVolume = () => {
@@ -223,6 +267,9 @@ export function RecordingPanel({ onComplete }: RecordingPanelProps) {
   const cleanup = (cancel: boolean) => {
     if (cycleTimerRef.current) { clearTimeout(cycleTimerRef.current); cycleTimerRef.current = 0 }
     if (elapsedTimerRef.current) { clearInterval(elapsedTimerRef.current); elapsedTimerRef.current = 0 }
+    // 停掉所有原始流（麦克风 + 系统音频）
+    allStreamsRef.current.forEach(s => s.getTracks().forEach(t => t.stop()))
+    allStreamsRef.current = []
     streamRef.current?.getTracks().forEach(t => t.stop())
     streamRef.current = null
     audioCtxRef.current?.close().catch(() => {})
@@ -231,14 +278,57 @@ export function RecordingPanel({ onComplete }: RecordingPanelProps) {
     if (cancel) setLiveSegments([])
   }
 
-  // 自动启动录音（组件 mount 后）
+  // 组件 mount：枚举设备
+  // 用户先选设备 + 系统音频开关，点"开始录音"才真正启动
   useEffect(() => {
-    beginRecording()
+    let cancelled = false
+    ;(async () => {
+      try {
+        // 先 get user media 触发权限请求，否则 labels 是空的
+        const tmp = await navigator.mediaDevices.getUserMedia({ audio: true })
+        tmp.getTracks().forEach(t => t.stop())
+        const devs = await navigator.mediaDevices.enumerateDevices()
+        if (cancelled) return
+        const inputs = devs.filter(d => d.kind === 'audioinput')
+        setAudioInputs(inputs)
+        // 默认选第一个（或保留之前选过的）
+        if (!useAppStore.getState().selectedMicId && inputs.length > 0) {
+          setSelectedMicId(inputs[0].deviceId)
+        }
+        // 检测 BlackHole（系统音频输入用）
+        const bh = inputs.find(d => /blackhole/i.test(d.label))
+        setSystemAudioDeviceId(bh?.deviceId || '')
+      } catch (e: any) {
+        toast(`无法获取麦克风列表: ${e.message || '请允许麦克风权限'}`, 'error')
+      }
+    })()
+
     return () => {
-      // 退出时清理（但保留已识别数据）
+      cancelled = true
       if (audioCtxRef.current) cleanup(false)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // 设备切换
+  const handleMicChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    setSelectedMicId(e.target.value)
+  }, [setSelectedMicId])
+
+  // 系统音频开关：没装 BlackHole 时给引导
+  const handleSystemAudioToggle = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const checked = e.target.checked
+    if (checked && !systemAudioDeviceId) {
+      toast('系统音频录制需要 BlackHole 虚拟声卡。安装后重新打开此开关即可使用', 'info')
+      // 自动打开 BlackHole 官网
+      window.open('https://existential.audio/blackhole/', '_blank')
+      return
+    }
+    setRecordSystemAudio(checked)
+    if (checked) {
+      toast('已开启系统音频录制（BlackHole 输入将与麦克风混合）', 'success')
+    }
+  }, [systemAudioDeviceId, setRecordSystemAudio])
 
   const totalChars = liveSegments.reduce((n, s) => n + (s.text?.length || 0), 0)
   const lastSeg = liveSegments[liveSegments.length - 1]
@@ -274,6 +364,45 @@ export function RecordingPanel({ onComplete }: RecordingPanelProps) {
         </div>
       </div>
 
+      {/* 设备选择条 */}
+      <div style={{padding:'10px 32px',display:'flex',alignItems:'center',gap:'16px',borderBottom:'1px solid rgba(255,255,255,0.06)',flexWrap:'wrap'}}>
+        <label style={{display:'flex',alignItems:'center',gap:'8px',fontSize:'12px',color:'rgba(255,255,255,0.6)'}}>
+          <span>🎤 麦克风</span>
+          <select
+            value={selectedMicId}
+            onChange={handleMicChange}
+            disabled={recordingState !== 'idle'}
+            style={{
+              background:'rgba(255,255,255,0.05)',
+              border:'1px solid rgba(255,255,255,0.1)',
+              borderRadius:'6px',
+              color:'rgba(255,255,255,0.85)',
+              padding:'4px 8px',
+              fontSize:'12px',
+              minWidth:'220px',
+              maxWidth:'320px',
+            }}
+          >
+            {audioInputs.length === 0 && <option value="">默认（请允许麦克风权限）</option>}
+            {audioInputs.map(d => (
+              <option key={d.deviceId} value={d.deviceId}>{d.label || `设备 ${d.deviceId.slice(0,8)}`}</option>
+            ))}
+          </select>
+        </label>
+        <label style={{display:'flex',alignItems:'center',gap:'6px',fontSize:'12px',color:'rgba(255,255,255,0.6)',cursor:'pointer'}}>
+          <input
+            type="checkbox"
+            checked={recordSystemAudio && !!systemAudioDeviceId}
+            onChange={handleSystemAudioToggle}
+            disabled={recordingState !== 'idle'}
+          />
+          <span>🔊 同时录制系统音频</span>
+          <span style={{fontSize:'10px',color: systemAudioDeviceId ? 'rgba(52,211,153,0.6)' : 'rgba(251,191,36,0.6)'}}>
+            {systemAudioDeviceId ? '（BlackHole 已就绪）' : '（未装 BlackHole，点击安装）'}
+          </span>
+        </label>
+      </div>
+
       {/* 音量条 */}
       <div style={{padding:'8px 32px',display:'flex',alignItems:'center',gap:'12px',borderBottom:'1px solid rgba(255,255,255,0.03)'}}>
         <span style={{fontSize:'10px',color:'rgba(255,255,255,0.3)',width:'40px'}}>音量</span>
@@ -290,8 +419,24 @@ export function RecordingPanel({ onComplete }: RecordingPanelProps) {
       <div style={{flex:1,overflowY:'auto',padding:'24px 32px'}}>
         {liveSegments.length === 0 ? (
           <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',flexDirection:'column',gap:'12px'}}>
-            <div style={{width:'40px',height:'40px',border:'2px solid rgba(255,255,255,0.1)',borderTop:'2px solid #60a5fa',borderRadius:'50%',animation:'spin 1s linear infinite'}} />
-            <p style={{color:'rgba(255,255,255,0.3)',fontSize:'13px',margin:0}}>等待说话…</p>
+            {recordingState === 'idle' ? (
+              <>
+                <div style={{width:'48px',height:'48px',borderRadius:'50%',background:'rgba(239,68,68,0.1)',display:'flex',alignItems:'center',justifyContent:'center',color:'#ef4444',fontSize:'24px'}}>⏺</div>
+                <p style={{color:'rgba(255,255,255,0.5)',fontSize:'14px',margin:0,fontWeight:500}}>
+                  选好麦克风后，点击下方"开始录音"按钮
+                </p>
+                <p style={{color:'rgba(255,255,255,0.3)',fontSize:'11px',margin:0}}>
+                  {audioInputs.length > 0
+                    ? `检测到 ${audioInputs.length} 个输入设备`
+                    : '正在请求麦克风权限…'}
+                </p>
+              </>
+            ) : (
+              <>
+                <div style={{width:'40px',height:'40px',border:'2px solid rgba(255,255,255,0.1)',borderTop:'2px solid #60a5fa',borderRadius:'50%',animation:'spin 1s linear infinite'}} />
+                <p style={{color:'rgba(255,255,255,0.3)',fontSize:'13px',margin:0}}>等待说话…</p>
+              </>
+            )}
           </div>
         ) : (
           <>
@@ -324,6 +469,14 @@ export function RecordingPanel({ onComplete }: RecordingPanelProps) {
 
       {/* 底部操作 */}
       <div style={{padding:'18px 32px',borderTop:'1px solid rgba(255,255,255,0.06)',display:'flex',justifyContent:'center',gap:'10px'}}>
+        {recordingState === 'idle' && (
+          <button
+            onClick={() => beginRecording()}
+            style={btnStyle('#fff', 'rgba(239,68,68,0.3)', '#ef4444')}
+          >
+            ⏺ 开始录音
+          </button>
+        )}
         {recordingState === 'recording' && (
           <>
             <button onClick={handlePause} style={btnStyle('#fbbf24', 'rgba(251,191,36,0.15)', 'rgba(251,191,36,0.3)')}>⏸ 暂停</button>

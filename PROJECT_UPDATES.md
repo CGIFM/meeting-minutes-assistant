@@ -1,5 +1,24 @@
 # 会议纪要助手 - 更新日志
 
+## 2026-06-26 v1.4 内存优化 + 麦克风选择 + 系统音频录制
+
+### 内存优化
+- ASR 模型空闲 5 分钟自动卸载（watchdog 后台线程）
+- 模型加载改用本地缓存绝对路径，绕过 modelscope SSL/registry 问题（启动从 90s→3s）
+- 双重检查锁防止 chunk ASR + full ASR 并发重复加载
+
+### 录音功能增强
+- **麦克风选择下拉框**：自动枚举所有输入设备，用户可指定使用哪个麦克风
+- **系统音频录制**：检测 BlackHole 虚拟声卡，勾选后混流麦克风+系统音频（适合在线会议）
+- Web Audio API 混流 + 多流统一清理（allStreamsRef）
+- 录音面板改为用户手动点击"开始录音"（不再自动启动）
+
+### 修复
+- 实时录音卡转圈：React ref 同步问题，状态 setter 异步导致 startCycle 拿到 stale state
+- 后端日志 0 字节：basicConfig 被 uvicorn 抢先配置，改手动 clear+add handlers
+- "录音处理失败"：get_audio_duration 解析 WebM 缺 duration tag，加多级 fallback
+- 录音合并：用 ffmpeg concat demuxer 替代字节拼接，产出带正确 duration 的容器
+
 ## 2026-06-25 v1.3 多格式导出 + 多轮迭代
 
 ### 导出
